@@ -12,6 +12,13 @@ CLEANUP_PG_DUMP := sed '/^SET/d;/^--/d;' | sed '/^$$/N;/^\n$$/D'
 print-scheme:
 	echo $(PROJECT_DB_SCHEME)
 
+migrate-db-head:
+	./util/migrate-db.sh \
+		--uri $(PROJECT_DB) \
+		--target HEAD \
+		--directory $(MIGRATION_FOLDER) \
+		--migrationtable $(MIGRATION_TABLE)
+
 # Dumps the database schema with no data
 dump-schema:
 	pg_dump $(PROJECT_DB) \

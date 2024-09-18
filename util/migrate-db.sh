@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
 USAGE="\
 Usage: migrate-db -u CONNECTION_URI -t TARGET_MIGRATION -d MIGRATIO_FOLDER
 Migrates the database to the specified target, running any migrations that
@@ -46,14 +48,23 @@ run to the latest migration file.
       recent version.
   -d, --directory DIR
       Migration file directory location.
+  -m, --migrationtable TABLE_NAME
+      Name of the table that should hold migration information.
   -h, --help
       Show this information
 "
 
 
-db_uri=
+db_uri=${PROJECT_DB}
 target_version=
-migration_folder=
+migration_folder=${MIGRATION_FOLDER}
+migration_table=${MIGRATION_TABLE}
+up_versions=
+dn_versions=
+cur_version=
+
+migration_path_direction=
+migration_path=
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -74,10 +85,20 @@ parse_args() {
         migration_folder="${1%/}"
         shift
         ;;
+      -m|--migrationtable)
+        shift
+        migration_table="${1}"
+        shift
+        ;;
       -h|--help)
         echo "$USAGE"
         shift
         exit 0
+        ;;
+      *)
+        echo "UNKNOWN OPTION: ${1}"
+        shift
+        ;;
     esac
   done
   # Check to make sure the necessary variables are set. If not, then exit with an error
@@ -100,13 +121,103 @@ parse_args() {
     echo "$USAGE"
     exit 1
   fi
+  if [ -z ${migration_table} ]; then
+    echo "ERROR: Please set -m"
+    echo
+    echo "$USAGE"
+    exit 1
+  fi
 }
 
 get_all_versions() {
-  up_versions=$(ls ${migration_folder}/*.up.sql)
-  dn_versions=$(ls ${migration_folder}/*.dn.sql)
-  echo "Up versions: $up_versions"
-  echo "Dn versions: $dn_versions"
+  up_version_files=($(ls ${migration_folder}/*.up.sql))
+  dn_version_files=($(ls ${migration_folder}/*.dn.sql))
+
+  up_versions=()
+  dn_versions=()
+
+  for f in "${up_version_files[@]}"; do
+    base_name=$(basename "${f}" .up.sql)
+    up_versions+=("${base_name}")
+  done
+  for f in "${dn_version_files[@]}"; do
+    base_name=$(basename "${f}" .dn.sql)
+    dn_versions+=("${base_name}")
+  done
+}
+
+drop_migration_table() {
+  psql "${db_uri}" -c "DROP TABLE IF EXISTS \"${migration_table}\"";
+}
+
+# Creates the migration table if it does not exist
+ensure_migration_table() {
+  psql "${db_uri}" -c "CREATE TABLE IF NOT EXISTS \"${migration_table}\" (
+  version TEXT NOT NULL PRIMARY KEY
+  );"
+  psql "${db_uri}" -c "INSERT INTO \"${migration_table}\" (\"version\") VALUES ('01-create-user-table')"
+}
+
+get_current_version() {
+  # -t (tuples only) -A (remove formatting)
+  cur_version=$(psql "${db_uri}" -tA -c "
+  SELECT version FROM \"${migration_table}\"
+  ORDER BY version DESC
+  LIMIT 1")
+  echo "Cur version: $cur_version"
+}
+
+# Based on the current version and the target version will build an array of all of the
+# migrations that will need to be run, along with whether these will be up or downgrades
+get_migrate_path() {
+  migration_path=()
+  # we're somewhat relying on the fact that an unset string is less than a set string, here
+  start_value=${cur_version}
+
+  # handle special target values
+  case "${target_version}" in
+    HEAD)
+      echo "TARGET IS HEAD"
+      target_version="${up_versions[-1]}"
+      ;;
+    ROOT)
+      target_version=""
+      ;;
+  esac
+  end_value="${target_version}"
+
+  # used to start and end the range of migrations to apply without having to write
+  # separate logic for when the end is less than the start
+  low_value=""
+  high_value=""
+
+  echo "Start Version: ${start_value}"
+  echo "End version:   ${end_value}"
+  echo "Cur version:   ${cur_version}"
+
+  if [[ "${start_value}" < "${end_value}" ]]; then
+    migration_path_direction="up"
+    low_value="${start_value}"
+    high_value="${end_value}"
+  elif [[ "${end_value}" < "${start_value}" ]]; then
+    migration_path_direction="dn"
+    low_value="${end_value}"
+    high_value="${start_value}"
+  else
+    # we are at the requested version
+    return
+  fi
+
+  for v in "${up_versions[@]}"; do
+    if [[ ! "${low_value}" > "${v}" && ! "${v}" > "${high_value}" && "${v}" != "${cur_version}" ]]; then
+      migration_path+=("${v}")
+    fi
+  done
+
+  for f in "${migration_path[@]}"; do
+    echo "Migrate to... ${f}"
+  done
+  echo "Migration dir:  ${migration_path_direction}"
 }
 
 run() {
@@ -114,7 +225,12 @@ run() {
   echo "URI:    ${db_uri}"
   echo "Target: ${target_version}"
   echo "Folder: ${migration_folder}"
+  echo "Table:  ${migration_table}"
   get_all_versions
+  drop_migration_table
+  ensure_migration_table
+  get_current_version
+  get_migrate_path
 }
 
 run "$@"
