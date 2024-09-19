@@ -65,6 +65,7 @@ cur_version=
 
 migration_path_direction=
 migration_path=
+migration_table_exists=false
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -146,18 +147,6 @@ get_all_versions() {
   done
 }
 
-drop_migration_table() {
-  psql "${db_uri}" -c "DROP TABLE IF EXISTS \"${migration_table}\"";
-}
-
-# Creates the migration table if it does not exist
-ensure_migration_table() {
-  psql "${db_uri}" -c "CREATE TABLE IF NOT EXISTS \"${migration_table}\" (
-  version TEXT NOT NULL PRIMARY KEY
-  );"
-  psql "${db_uri}" -c "INSERT INTO \"${migration_table}\" (\"version\") VALUES ('01-create-user-table')"
-}
-
 get_current_version() {
   # -t (tuples only) -A (remove formatting)
   cur_version=$(psql "${db_uri}" -tA -c "
@@ -214,10 +203,30 @@ get_migrate_path() {
     fi
   done
 
+  # if we're downgrading then reverse the direction of the migration path
+  if [[ "${migration_path_direction}" == "dn" ]]; then
+    temp_migration_path=()
+    len=${#migration_path[@]}
+    for (( i=$len-1; i>=0; i-- )); do
+      temp_migration_path+=("${migration_path[$i]}")
+    done
+    migration_path=("${temp_migration_path[@]}")
+  fi
+
+  echo "Migration path..."
   for f in "${migration_path[@]}"; do
-    echo "Migrate to... ${f}"
+    echo "    ${f}"
   done
-  echo "Migration dir:  ${migration_path_direction}"
+}
+
+run_migration_path() {
+  migration_files=()
+  for v in "${migration_path[@]}"; do
+    migration_files+=("${migration_folder}/${v}.${migration_path_direction}.sql")
+  done
+  for f in "${migration_files[@]}"; do
+    echo "Running... ${f}"
+  done
 }
 
 run() {
@@ -227,10 +236,9 @@ run() {
   echo "Folder: ${migration_folder}"
   echo "Table:  ${migration_table}"
   get_all_versions
-  drop_migration_table
-  ensure_migration_table
   get_current_version
   get_migrate_path
+  run_migration_path
 }
 
 run "$@"
