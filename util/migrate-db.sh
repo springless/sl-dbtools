@@ -222,10 +222,21 @@ get_migrate_path() {
 run_migration_path() {
   migration_files=()
   for v in "${migration_path[@]}"; do
-    migration_files+=("${migration_folder}/${v}.${migration_path_direction}.sql")
-  done
-  for f in "${migration_files[@]}"; do
-    echo "Running... ${f}"
+    migration_file="${migration_folder}/${v}.${migration_path_direction}.sql"
+    if [ -f "${migration_file}" ]; then
+      psql "${db_uri}" -f "${migration_file}"
+    else
+      echo "Nothing to be done for: ${v}"
+    fi
+
+    if [[ -z "${cur_version}" ]]; then
+      # this is the first version added to the database, we need to insert a value
+      psql "${db_uri}" -c "INSERT INTO \"${migration_table}\" (version) VALUES ('${v}')"
+    else
+      # version is already inserted, update the existing row
+      psql "${db_uri}" -c "UPDATE \"${migration_table}\" SET version='${v}'"
+    fi
+    cur_version="${v}"
   done
 }
 
