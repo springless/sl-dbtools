@@ -4,3 +4,8 @@
 
 # Schemaspy output
 /schemaspy-output
+
+# Rust build directory
+/target
+# Cargo Insta test snapshot updates waiting to be applied
+*.pending-snap
