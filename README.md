@@ -39,14 +39,12 @@ database and attempt to migrate to the latest version, it will run:
 - 04-remove-password.up.sql
 ```
 
-The first migration has to include the version table. It can do other things, but after each
-migration it writes the current version into the version table. By default this table is called
-`sl_migration`, but this can be changed via environment variable or passing options to the
-command line utilities. The version table should only ever have one value in it, and that
-value will be the version name for the current schema version. For example, if we updated to
-`HEAD` with the migration table above, the final version should be `04-remove-password`.
+The version table will typically only ever have one row in it, and that value will be the
+version name for the current schema version, which is everything up until the postfix and
+extension. For example, if we updated to `HEAD` with the migrations above, the final version
+would be `04-remove-password`.
 
-If we then downgrade, for instance to version `01-create-user-table`, it will run:
+If we then downgrade, for example to version `01-create-user-table`, it will run:
 
 ```
 - 04-remove-password.dn.sql
@@ -58,6 +56,24 @@ so it is considered a no-op. It's not strictly necessary to use the downgrade fi
 them will just obviously mean that rolling back changes will not be supported. You can reference
 the sample migrations folder in the `tests` directory of this repository if you still need
 more clarity on how this part of the system works, but there's not much more to it.
+
+## First Migration
+
+The first migration has to include the version table that will be used to track the schema
+version. This can be named anything you want, but must have a `version` column which is the
+only column that must be set. You can see an example in
+`tests/migrations/00-create-version-table.up.sql`, but fundamentally for postgres the file can
+just include the following:
+
+```sql
+CREATE TABLE "sl_migration" (
+  version TEXT NOT NULL PRIMARY KEY
+);
+```
+
+This can be a part of a larger file setting up other tables, or a standalone file as it is
+in the `tests` folder, but the overall point is that the version tracking table must exist
+by the end of the first migration.
 
 ## Naming migration files
 
