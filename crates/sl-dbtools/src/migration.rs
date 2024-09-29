@@ -6,7 +6,7 @@ pub struct MigrationVersion {
     version: String,
 }
 
-/// Represents a version being requested by the user
+/// Represents a version being requested
 pub enum TargetVersion {
     /// Represents the final value in the migration path
     Head,
@@ -16,7 +16,7 @@ pub enum TargetVersion {
     Name((String, i32)),
 }
 
-/// The direction in which a migration must proceed
+/// The direction of a migration sequence
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum MigrationDirection {
     Up,
@@ -194,12 +194,29 @@ mod tests {
 
     #[test]
     fn test_search_version() {
+        // Head
         assert_eq!(
             MigrationVersion::load_migration_folder("../../tests/migrations")
                 .unwrap()
                 .search_version(TargetVersion::Head)
                 .unwrap(),
             &MigrationVersion { version: "04-remove-password".into() },
+        );
+        // First
+        assert_eq!(
+            MigrationVersion::load_migration_folder("../../tests/migrations")
+                .unwrap()
+                .search_version(TargetVersion::First)
+                .unwrap(),
+            &MigrationVersion { version: "00-create-version-table".into() },
+        );
+        // Name
+        assert_eq!(
+            MigrationVersion::load_migration_folder("../../tests/migrations")
+                .unwrap()
+                .search_version(TargetVersion::Name(("update-user".into(), 0)))
+                .unwrap(),
+            &MigrationVersion { version: "02-update-user-table".into() },
         );
     }
 
