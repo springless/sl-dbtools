@@ -16,6 +16,7 @@ pub enum TargetVersion {
     Name((String, i32)),
 }
 
+/// The direction in which a migration must proceed
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub enum MigrationDirection {
     Up,
@@ -23,6 +24,8 @@ pub enum MigrationDirection {
     Dn,
 }
 
+/// A specific sequence of migration versions that must be stepped through in order to complete
+/// a requested migration.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct MigrationPath {
     versions: Vec<MigrationVersion>,
@@ -163,6 +166,10 @@ impl MigrationPath {
             }
         });
 
+        if direction == MigrationDirection::Dn {
+            version_path.reverse();
+        }
+
         Ok(Self { versions: version_path, direction })
     }
 }
@@ -198,6 +205,7 @@ mod tests {
 
     #[test]
     fn test_get_migration_path() {
+        // Upgrade from None
         assert_eq!(
             MigrationPath::new_from_folder(
                 "../../tests/migrations",
@@ -215,8 +223,56 @@ mod tests {
                 direction: MigrationDirection::Up,
             }
         );
+
+        // Upgrade from a middle version
+        assert_eq!(
+            MigrationPath::new_from_folder(
+                "../../tests/migrations",
+                Some(MigrationVersion { version: "01-create-user-table".into() }),
+                TargetVersion::Name(("03-clear-password".into(), 0)),
+            ).unwrap(),
+            MigrationPath {
+                versions: vec![
+                    MigrationVersion { version: "02-update-user-table".into() },
+                    MigrationVersion { version: "03-clear-password".into() },
+                ],
+                direction: MigrationDirection::Up,
+            }
+        );
+
+        // Downgrade to first
+        assert_eq!(
+            MigrationPath::new_from_folder(
+                "../../tests/migrations",
+                Some(MigrationVersion { version: "04-remove-password".into() }),
+                TargetVersion::First,
+            ).unwrap(),
+            MigrationPath {
+                versions: vec![
+                    MigrationVersion { version: "03-clear-password".into() },
+                    MigrationVersion { version: "02-update-user-table".into() },
+                    MigrationVersion { version: "01-create-user-table".into() },
+                    MigrationVersion { version: "00-create-version-table".into() },
+                ],
+                direction: MigrationDirection::Dn,
+            }
+        );
+
+        // Target is current
+        assert_eq!(
+            MigrationPath::new_from_folder(
+                "../../tests/migrations",
+                Some(MigrationVersion { version: "02-update-user-table".into() }),
+                TargetVersion::Name(("04-remove-password".into(), -2)),
+            ).unwrap(),
+            MigrationPath {
+                versions: vec![],
+                direction: MigrationDirection::Eq,
+            }
+        );
     }
 
+    #[test]
     fn test_get_migration_version_file_name() {
         assert_eq!(
             MigrationVersion { version: "00-create-version-table".into() }.file_name(MigrationDirection::Dn),
