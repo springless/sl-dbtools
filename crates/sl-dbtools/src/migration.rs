@@ -56,6 +56,17 @@ impl MigrationVersion {
         let versions = versions.into_iter().map(|ver| MigrationVersion { version: ver }).collect();
         Ok(versions)
     }
+
+    pub fn file_name(&self, direction: MigrationDirection) -> String {
+        format!("{version}.{dir}.sql",
+            version = self.version,
+            dir = if direction == MigrationDirection::Dn {
+                "dn"
+            } else {
+                "up"
+            }
+        )
+    }
 }
 
 pub trait SearchVersion {
@@ -203,6 +214,13 @@ mod tests {
                 ],
                 direction: MigrationDirection::Up,
             }
+        );
+    }
+
+    fn test_get_migration_version_file_name() {
+        assert_eq!(
+            MigrationVersion { version: "00-create-version-table".into() }.file_name(MigrationDirection::Dn),
+            "00-create-version-table.dn.sql",
         );
     }
 }
