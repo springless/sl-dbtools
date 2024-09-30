@@ -202,10 +202,12 @@ impl MigrationPath {
 mod tests {
     use super::*;
 
+    const TEST_FOLDER: &str = "../../tests/migrations";
+
     #[test]
     fn test_get_version_files() {
         assert_eq!(
-            MigrationVersion::load_migration_folder("../../tests/migrations").unwrap(),
+            MigrationVersion::load_migration_folder(TEST_FOLDER).unwrap(),
             vec![
                 MigrationVersion { version: "00-create-version-table".into() },
                 MigrationVersion { version: "01-create-user-table".into() },
@@ -220,7 +222,7 @@ mod tests {
     fn test_search_version() {
         // Head
         assert_eq!(
-            MigrationVersion::load_migration_folder("../../tests/migrations")
+            MigrationVersion::load_migration_folder(TEST_FOLDER)
                 .unwrap()
                 .search_version(TargetVersion::Head)
                 .unwrap(),
@@ -228,7 +230,7 @@ mod tests {
         );
         // First
         assert_eq!(
-            MigrationVersion::load_migration_folder("../../tests/migrations")
+            MigrationVersion::load_migration_folder(TEST_FOLDER)
                 .unwrap()
                 .search_version(TargetVersion::First)
                 .unwrap(),
@@ -236,7 +238,7 @@ mod tests {
         );
         // Name
         assert_eq!(
-            MigrationVersion::load_migration_folder("../../tests/migrations")
+            MigrationVersion::load_migration_folder(TEST_FOLDER)
                 .unwrap()
                 .search_version(TargetVersion::Name(("update-user".into(), 0)))
                 .unwrap(),
@@ -249,7 +251,7 @@ mod tests {
         // Upgrade from None
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 None,
                 TargetVersion::Head,
             ).unwrap(),
@@ -268,7 +270,7 @@ mod tests {
         // Upgrade from a middle version
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 Some(MigrationVersion { version: "01-create-user-table".into() }),
                 TargetVersion::Name(("03-clear-password".into(), 0)),
             ).unwrap(),
@@ -284,7 +286,7 @@ mod tests {
         // Downgrade to first
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 Some(MigrationVersion { version: "04-remove-password".into() }),
                 TargetVersion::First,
             ).unwrap(),
@@ -302,7 +304,7 @@ mod tests {
         // Target is current
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 Some(MigrationVersion { version: "02-update-user-table".into() }),
                 TargetVersion::Name(("04-remove-password".into(), -2)),
             ).unwrap(),
@@ -325,12 +327,12 @@ mod tests {
     fn test_get_migration_path_files() {
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 None,
                 TargetVersion::Head,
             )
                 .unwrap()
-                .migration_files("../../tests/migrations"),
+                .migration_files(TEST_FOLDER),
             vec![
                 Some("../../tests/migrations/00-create-version-table.up.sql".into()),
                 Some("../../tests/migrations/01-create-user-table.up.sql".into()),
@@ -342,12 +344,12 @@ mod tests {
 
         assert_eq!(
             MigrationPath::new_from_folder(
-                "../../tests/migrations",
+                TEST_FOLDER,
                 Some(MigrationVersion { version: "04-remove-password".into() }),
                 TargetVersion::First,
             )
                 .unwrap()
-                .migration_files("../../tests/migrations"),
+                .migration_files(TEST_FOLDER),
             vec![
                 Some("../../tests/migrations/04-remove-password.dn.sql".into()),
                 None,
