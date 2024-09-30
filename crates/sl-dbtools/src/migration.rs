@@ -1,35 +1,9 @@
-use std::{io::{Error, ErrorKind}, path::Path};
+use std::{io::{Error, ErrorKind}, path::{Path, PathBuf}};
 
 /// An individual migration that can be performed on the database
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub struct MigrationVersion {
     version: String,
-}
-
-/// Represents a version being requested
-pub enum TargetVersion {
-    /// Represents the final value in the migration path
-    Head,
-    /// Represents the database at the end of the very first migration
-    First,
-    /// A version identified by name and an optional offset from that version
-    Name((String, i32)),
-}
-
-/// The direction of a migration sequence
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub enum MigrationDirection {
-    Up,
-    Eq,
-    Dn,
-}
-
-/// A specific sequence of migration versions that must be stepped through in order to complete
-/// a requested migration.
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub struct MigrationPath {
-    versions: Vec<MigrationVersion>,
-    direction: MigrationDirection,
 }
 
 impl MigrationVersion {
@@ -70,6 +44,52 @@ impl MigrationVersion {
             }
         )
     }
+
+    /// Attempts to locate the migration file. If it exists, then it will return the
+    /// path to the file, and if it does not then will return None.
+    pub fn migration_file<P>(
+        &self,
+        direction: MigrationDirection,
+        folder: P,
+    ) -> Option<PathBuf>
+    where P: AsRef<Path> {
+        let folder_path = folder.as_ref();
+        let file_name = self.file_name(direction);
+        let full_path = folder_path.join(file_name);
+
+        if full_path.exists() {
+            Some(full_path)
+        } else {
+            None
+        }
+    }
+}
+
+
+/// Represents a version being requested
+pub enum TargetVersion {
+    /// Represents the final value in the migration path
+    Head,
+    /// Represents the database at the end of the very first migration
+    First,
+    /// A version identified by name and an optional offset from that version
+    Name((String, i32)),
+}
+
+/// The direction of a migration sequence
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone)]
+pub enum MigrationDirection {
+    Up,
+    Eq,
+    Dn,
+}
+
+/// A specific sequence of migration versions that must be stepped through in order to complete
+/// a requested migration.
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub struct MigrationPath {
+    versions: Vec<MigrationVersion>,
+    direction: MigrationDirection,
 }
 
 pub trait SearchVersion {
@@ -150,11 +170,7 @@ impl MigrationPath {
         all_versions.iter().for_each(|val| {
             match low {
                 Some(low_version) => {
-                    if val > low_version && val < high {
-                        version_path.push(val.to_owned());
-                    } else if val == low_version && direction == MigrationDirection::Dn {
-                        version_path.push(val.to_owned());
-                    } else if val == high && direction == MigrationDirection::Up {
+                    if val > low_version && val <= high {
                         version_path.push(val.to_owned());
                     }
                 },
@@ -171,6 +187,14 @@ impl MigrationPath {
         }
 
         Ok(Self { versions: version_path, direction })
+    }
+
+    pub fn migration_files<P>(&self, folder: P) -> Vec<Option<PathBuf>>
+    where P: AsRef<Path> {
+        let folder_path = folder.as_ref();
+        self.versions.iter()
+            .map(|ver| ver.migration_file(self.direction, folder_path))
+            .collect()
     }
 }
 
@@ -266,10 +290,10 @@ mod tests {
             ).unwrap(),
             MigrationPath {
                 versions: vec![
+                    MigrationVersion { version: "04-remove-password".into() },
                     MigrationVersion { version: "03-clear-password".into() },
                     MigrationVersion { version: "02-update-user-table".into() },
                     MigrationVersion { version: "01-create-user-table".into() },
-                    MigrationVersion { version: "00-create-version-table".into() },
                 ],
                 direction: MigrationDirection::Dn,
             }
@@ -294,6 +318,42 @@ mod tests {
         assert_eq!(
             MigrationVersion { version: "00-create-version-table".into() }.file_name(MigrationDirection::Dn),
             "00-create-version-table.dn.sql",
+        );
+    }
+
+    #[test]
+    fn test_get_migration_path_files() {
+        assert_eq!(
+            MigrationPath::new_from_folder(
+                "../../tests/migrations",
+                None,
+                TargetVersion::Head,
+            )
+                .unwrap()
+                .migration_files("../../tests/migrations"),
+            vec![
+                Some("../../tests/migrations/00-create-version-table.up.sql".into()),
+                Some("../../tests/migrations/01-create-user-table.up.sql".into()),
+                Some("../../tests/migrations/02-update-user-table.up.sql".into()),
+                Some("../../tests/migrations/03-clear-password.up.sql".into()),
+                Some("../../tests/migrations/04-remove-password.up.sql".into()),
+            ],
+        );
+
+        assert_eq!(
+            MigrationPath::new_from_folder(
+                "../../tests/migrations",
+                Some(MigrationVersion { version: "04-remove-password".into() }),
+                TargetVersion::First,
+            )
+                .unwrap()
+                .migration_files("../../tests/migrations"),
+            vec![
+                Some("../../tests/migrations/04-remove-password.dn.sql".into()),
+                None,
+                Some("../../tests/migrations/02-update-user-table.dn.sql".into()),
+                Some("../../tests/migrations/01-create-user-table.dn.sql".into()),
+            ],
         );
     }
 }
