@@ -1,1 +1,1 @@
-DROP TABLE "sl_migration";
+DROP TABLE "_schema_version";

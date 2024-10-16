@@ -66,7 +66,7 @@ only column that must be set. You can see an example in
 just include the following:
 
 ```sql
-CREATE TABLE "sl_migration" (
+CREATE TABLE "_schema_version" (
   version TEXT NOT NULL PRIMARY KEY
 );
 ```
@@ -88,7 +88,7 @@ schema dump and place it in a file called `04-remove-password.up.sql`, or place 
 called something like `00-initial-schema.up.sql` and then manually run:
 
 ```sql
-UPDATE TABLE "sl_migration"
+UPDATE TABLE "_schema_version"
 SET "version" = '00-initial-schema';
 ```
 
