@@ -1,3 +1,3 @@
-CREATE TABLE "sl_migration" (
+CREATE TABLE "_schema_version" (
   version TEXT NOT NULL PRIMARY KEY
 );

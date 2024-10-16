@@ -10,18 +10,18 @@ RUN_PG_DUMP := PGPASSWORD=$(POSTGRES_PASS) pg_dump \
 CLEANUP_PG_DUMP := sed '/^SET/d;/^--/d;' | sed '/^$$/N;/^\n$$/D'
 
 print-scheme:
-	echo $(PROJECT_DB_SCHEME)
+	echo $(MIGRATION_DB_SCHEME)
 
 migrate-db-head:
 	./util/migrate-db.sh \
-		--uri $(PROJECT_DB) \
+		--uri $(MIGRATION_URL) \
 		--target HEAD \
 		--directory $(MIGRATION_FOLDER) \
 		--migrationtable $(MIGRATION_TABLE)
 
 # Dumps the database schema with no data
 dump-schema:
-	pg_dump $(PROJECT_DB) \
+	pg_dump $(MIGRATION_DB) \
 		--schema-only \
 		--no-owner \
 		--no-privileges \
@@ -30,7 +30,7 @@ dump-schema:
 
 # Dumps a backup that uses INSERTs to recreate data
 dump-data-insert:
-	pg_dump $(PROJECT_DB) \
+	pg_dump $(MIGRATION_DB) \
 		--rows-per-insert=1000 \
 		--column-inserts \
 		--data-only \
@@ -40,7 +40,7 @@ dump-data-insert:
 
 # Dumps a backup that uses COPY to recreate data
 dump-data-copy:
-	pg_dump $(PROJECT_DB) \
+	pg_dump $(MIGRATION_DB) \
 		--data-only \
 		--quote-all-identifiers \
 		| $(CLEANUP_PG_DUMP) \
@@ -48,7 +48,7 @@ dump-data-copy:
 
 # Dumps the entire schema + data using INSERT statements
 dump-full-insert:
-	pg_dump $(PROJECT_DB) \
+	pg_dump $(MIGRATION_DB) \
 		--rows-per-insert=1000 \
 		--column-inserts \
 		--quote-all-identifiers \
@@ -57,7 +57,7 @@ dump-full-insert:
 
 # Dumps a full backup that uses COPY to recreate data
 dump-full-copy:
-	pg_dump $(PROJECT_DB) \
+	pg_dump $(MIGRATION_DB) \
 		--quote-all-identifiers \
 		| $(CLEANUP_PG_DUMP) \
 		> $(SCHEMA_DATA_FILE)
@@ -66,9 +66,9 @@ dump-data: dump-data-copy
 
 create-db:
 	psql $(ADMIN_DB) \
-		-c "CREATE DATABASE \"$(PROJECT_DB_RESOURCE)\" OWNER \"$(PROJECT_DB_USER)\";"
+		-c "CREATE DATABASE \"$(MIGRATION_DB_RESOURCE)\" OWNER \"$(MIGRATION_DB_USER)\";"
 
 drop-db:
 	psql $(ADMIN_DB) \
-		-c "DROP DATABASE \"$(PROJECT_DB_RESOURCE)\";"
+		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\";"
 
