@@ -112,6 +112,22 @@ metal and avoid too much magic when it comes to the database.
 
 # Bash Tools
 
+## Installing
+Using the bash scripts and makefiles requires copying the `sl-migrate` folder into your project
+and including `migrate.mk` in your root Makefile (the folder does not have to be named
+`sl-migrate`). This will expose all of the targets available in `migrate.mk`. By default,
+migrate-mk will attempt to load a `.env` file in your root directory, so you can use that
+file to set defaults and values for environment variables that should be seen and used
+by the scripts.
+
+```makefile
+include ./sl-migrate/migrate.mk
+
+# ... rest of the Makefile
+```
+
+In order to update, just copy over any changed files.
+
 ## System Requirements
 
 The Bash tools rely heavily on some pretty common Linux utilities:
