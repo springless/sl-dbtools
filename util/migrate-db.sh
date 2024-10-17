@@ -57,7 +57,7 @@ run to the latest migration file.
 
 db_uri=${PROJECT_DB}
 target_version=
-migration_folder=${MIGRATION_FOLDER}
+migration_folder=${MIGRATION_DIR}
 migration_table=${MIGRATION_TABLE}
 up_versions=
 dn_versions=
