@@ -18,16 +18,26 @@ create-db:
 		-c "CREATE DATABASE \"$(MIGRATION_DB_RESOURCE)\" OWNER \"$(MIGRATION_DB_USER)\";"
 
 drop-db:
-	psql $(ADMIN_DB) \
+	-psql $(ADMIN_DB) \
 		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\";"
 
 migrate-db-head:
 	./util/migrate-db.sh \
 		--uri $(MIGRATION_URL) \
 		--target HEAD \
-		--directory $(MIGRATION_FOLDER) \
+		--directory $(MIGRATION_DIR) \
 		--migrationtable $(MIGRATION_TABLE)
 
+seed-db:
+	psql $(MIGRATION_URL) \
+		-f $(MIGRATION_SEED_FILE)
+
+
+# Resets the database to a completely empty state and runs all migrations
+reset-db-migrate: drop-db create-db migrate-db-head
+
+# Resets the database to match the provided seed file
+reset-db-seed: drop-db create-db seed-db
 
 ###
 # Schema visualization
