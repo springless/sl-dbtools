@@ -41,6 +41,10 @@ CLEANUP_PG_DUMP := sed '/^SET/d;/^--/d;' | sed '/^$$/N;/^\n$$/D'
 # Migration management
 ###
 
+schema-version:
+	psql $(MIGRATION_URL) \
+		-c "SELECT version FROM $(MIGRATION_TABLE) ORDER BY version DESC LIMIT 1"
+
 create-db:
 	psql $(ADMIN_DB) \
 		-c "CREATE DATABASE \"$(MIGRATION_DB_RESOURCE)\" OWNER \"$(MIGRATION_DB_USER)\";"
