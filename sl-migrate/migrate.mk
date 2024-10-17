@@ -2,6 +2,9 @@ _MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
 # Root directory of this repository. Realpath strips the ending slash; not
 # strictly necessary, just more consistent.
 _MKFILE_DIR := $(realpath $(dir $(_MKFILE_PATH)))
+# NOTE: Make doesn't have locally scoped variables, so you want to make sure that
+# you are not using either of the above in anything other than an immediate assignment
+# (`:=`) or else another script might define these variables and walk over this one.
 
 # Load a .env file if it exists
 ifneq (,$(wildcard ./.env))
@@ -10,14 +13,14 @@ ifneq (,$(wildcard ./.env))
 endif
 
 # By default we assume the scripts are in the same folder as this file
-SCRIPT_FOLDER := $(_MKFILE_DIR)
+SCRIPT_DIR := $(_MKFILE_DIR)
 
 # Variables to support acting on a project DB
-MIGRATION_DB_HOST := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(DATABASE_URL)" --host)
-MIGRATION_DB_PORT := $(shell port=$$(./scripts/parse-uri.sh "$(MIGRATION_URL)" --port); if [ -z "$$port" ]; then echo 5432; else echo $$port; fi)
-MIGRATION_DB_USER := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --username)
-MIGRATION_DB_PASSWORD := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --password)
-MIGRATION_DB_RESOURCE := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --resource)
+MIGRATION_DB_HOST := $(shell $(SCRIPT_DIR)/parse-uri.sh "$(DATABASE_URL)" --host)
+MIGRATION_DB_PORT := $(shell port=$$($(SCRIPT_DIR)/parse-uri.sh "$(MIGRATION_URL)" --port); if [ -z "$$port" ]; then echo 5432; else echo $$port; fi)
+MIGRATION_DB_USER := $(shell $(SCRIPT_DIR)/parse-uri.sh "$(MIGRATION_URL)" --username)
+MIGRATION_DB_PASSWORD := $(shell $(SCRIPT_DIR)/parse-uri.sh "$(MIGRATION_URL)" --password)
+MIGRATION_DB_RESOURCE := $(shell $(SCRIPT_DIR)/parse-uri.sh "$(MIGRATION_URL)" --resource)
 
 # Use this value to override the schema that is being output by schemaspy
 SCHEMASPY_SCHEMA := public
@@ -47,7 +50,7 @@ drop-db:
 		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\";"
 
 migrate-db-head:
-	$(SCRIPT_FOLDER)/migrate-db.sh \
+	$(SCRIPT_DIR)/migrate-db.sh \
 		--uri $(MIGRATION_URL) \
 		--target HEAD \
 		--directory $(MIGRATION_DIR) \
