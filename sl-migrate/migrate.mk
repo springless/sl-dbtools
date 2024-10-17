@@ -19,6 +19,9 @@ MIGRATION_DB_USER := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --
 MIGRATION_DB_PASSWORD := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --password)
 MIGRATION_DB_RESOURCE := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --resource)
 
+# Use this value to override the schema that is being output by schemaspy
+SCHEMASPY_SCHEMA := public
+
 # Variables to support acting on an admin DB
 ADMIN_DB := $(shell if [ -z "$(MIGRATION_ADMIN_URL)" ]; then echo "$(MIGRATION_URL)"; else echo "$(MIGRATION_ADMIN_URL)"; fi)
 
@@ -128,5 +131,5 @@ schemaspy:
 		-host $(MIGRATION_DB_HOST) \
 		-port $(MIGRATION_DB_PORT) \
 		-db $(MIGRATION_DB_RESOURCE) \
-		-s public
+		-s $(SCHEMASPY_SCHEMA)
 
