@@ -1,15 +1,23 @@
+_MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+# Root directory of this repository. Realpath strips the ending slash; not
+# strictly necessary, just more consistent.
+_MKFILE_DIR := $(realpath $(dir $(_MKFILE_PATH)))
+
 # Load a .env file if it exists
 ifneq (,$(wildcard ./.env))
 	include .env
 	export
 endif
 
+# By default we assume the scripts are in the same folder as this file
+SCRIPT_FOLDER := $(_MKFILE_DIR)
+
 # Variables to support acting on a project DB
-MIGRATION_DB_HOST := $(shell ./util/parse-uri.sh "$(DATABASE_URL)" --host)
+MIGRATION_DB_HOST := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(DATABASE_URL)" --host)
 MIGRATION_DB_PORT := $(shell port=$$(./scripts/parse-uri.sh "$(MIGRATION_URL)" --port); if [ -z "$$port" ]; then echo 5432; else echo $$port; fi)
-MIGRATION_DB_USER := $(shell ./util/parse-uri.sh "$(MIGRATION_URL)" --username)
-MIGRATION_DB_PASSWORD := $(shell ./util/parse-uri.sh "$(MIGRATION_URL)" --password)
-MIGRATION_DB_RESOURCE := $(shell ./util/parse-uri.sh "$(MIGRATION_URL)" --resource)
+MIGRATION_DB_USER := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --username)
+MIGRATION_DB_PASSWORD := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --password)
+MIGRATION_DB_RESOURCE := $(shell $(SCRIPT_FOLDER)/parse-uri.sh "$(MIGRATION_URL)" --resource)
 
 # Variables to support acting on an admin DB
 ADMIN_DB := $(shell if [ -z "$(MIGRATION_ADMIN_URL)" ]; then echo "$(MIGRATION_URL)"; else echo "$(MIGRATION_ADMIN_URL)"; fi)
@@ -36,7 +44,7 @@ drop-db:
 		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\";"
 
 migrate-db-head:
-	./util/migrate-db.sh \
+	$(SCRIPT_FOLDER)/migrate-db.sh \
 		--uri $(MIGRATION_URL) \
 		--target HEAD \
 		--directory $(MIGRATION_DIR) \

@@ -1,1 +1,1 @@
-include migrate.mk
+include ./sl-migrate/migrate.mk
