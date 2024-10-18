@@ -1,13 +1,11 @@
-_MKFILE_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-# Root directory of this repository. Realpath strips the ending slash; not
-# strictly necessary, just more consistent.
-_MKFILE_DIR := $(realpath $(dir $(_MKFILE_PATH)))
-# NOTE: Make doesn't have locally scoped variables, so you want to make sure that
-# you are not using either of the above in anything other than an immediate assignment
-# (`:=`) or else another script might define these variables and walk over this one.
+# Retrieves the absolute path to this makefile, and the directory containing it.
+# This value is difficult to override, so if you are placing this in other makefiles
+# being included in this one, make sure they are namespaced appropriately
+_MIGRATE_MK_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
+_MIGRATE_MK_DIR := $(realpath $(dir $(_MKFILE_PATH)))
 
 # By default we assume the scripts are in the same folder as this file
-SCRIPT_DIR := $(_MKFILE_DIR)
+SCRIPT_DIR := $(_MIGRATE_MK_DIR)
 
 # Variables to support acting on a project DB
 MIGRATION_DB_HOST := $(shell $(SCRIPT_DIR)/parse-uri.sh "$(DATABASE_URL)" --host)
