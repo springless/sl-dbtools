@@ -2,7 +2,7 @@
 # This value is difficult to override, so if you are placing this in other makefiles
 # being included in this one, make sure they are namespaced appropriately
 _MIGRATE_MK_PATH := $(abspath $(lastword $(MAKEFILE_LIST)))
-_MIGRATE_MK_DIR := $(realpath $(dir $(_MKFILE_PATH)))
+_MIGRATE_MK_DIR := $(realpath $(dir $(_MIGRATE_MK_PATH)))
 
 # By default we assume the scripts are in the same folder as this file
 SCRIPT_DIR := $(_MIGRATE_MK_DIR)
