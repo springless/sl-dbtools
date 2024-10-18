@@ -224,7 +224,18 @@ run_migration_path() {
   for v in "${migration_path[@]}"; do
     migration_file="${migration_folder}/${v}.${migration_path_direction}.sql"
     if [ -f "${migration_file}" ]; then
-      psql "${db_uri}" -f "${migration_file}"
+      echo "Running migration: ${migration_file}"
+      {
+        echo "BEGIN;";
+        cat "${migration_file}";
+        echo "COMMIT;";
+      } | psql -v ON_ERROR_STOP=on "${db_uri}"
+      exit_code=$?
+      if [ $exit_code -ne 0 ]; then
+        echo "Failed to apply migration: ${migration_file}"
+        echo "psql failed with exit code: ${exit_code}"
+        exit $exit_code
+      fi
     else
       echo "Nothing to be done for: ${v}"
     fi

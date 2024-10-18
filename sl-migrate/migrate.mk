@@ -6,12 +6,6 @@ _MKFILE_DIR := $(realpath $(dir $(_MKFILE_PATH)))
 # you are not using either of the above in anything other than an immediate assignment
 # (`:=`) or else another script might define these variables and walk over this one.
 
-# Load a .env file if it exists
-ifneq (,$(wildcard ./.env))
-	include .env
-	export
-endif
-
 # By default we assume the scripts are in the same folder as this file
 SCRIPT_DIR := $(_MKFILE_DIR)
 
@@ -40,6 +34,10 @@ CLEANUP_PG_DUMP := sed '/^SET/d;/^--/d;' | sed '/^$$/N;/^\n$$/D'
 ###
 # Migration management
 ###
+
+schema-version:
+	psql $(MIGRATION_URL) \
+		-c "SELECT version FROM $(MIGRATION_TABLE) ORDER BY version DESC LIMIT 1"
 
 create-db:
 	psql $(ADMIN_DB) \
