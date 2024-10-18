@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = "0.4.38"
 dotenv = "0.15.0"
 sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite", "postgres"] }
 tokio = { version = "1.40.0", features = ["macros"] }
+uuid = { version = "1.11.0", features = ["v4"] }
