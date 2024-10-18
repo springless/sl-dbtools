@@ -45,7 +45,7 @@ create-db:
 
 drop-db:
 	-psql $(ADMIN_DB) \
-		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\";"
+		-c "DROP DATABASE \"$(MIGRATION_DB_RESOURCE)\" WITH (FORCE);"
 
 migrate-db-head:
 	$(SCRIPT_DIR)/migrate-db.sh \
