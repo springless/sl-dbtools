@@ -41,6 +41,26 @@ pub struct DbNamingProps {
     keep_full: bool,
 }
 
+impl DbNamingProps {
+    /// Creates a new database name utilizing the default configuration, which is
+    /// including a timestamp, a uuid, and truncating the full name if it is over
+    /// the character limit. The timestamp is generated at the time of calling
+    /// this function, and the UUID is random.
+    pub fn new_default<T: AsRef<str>>(base: T, name: Option<T>) -> Self {
+        let this_name = match name {
+            Some(v) => Some(v.as_ref().to_string()),
+            None => None,
+        };
+        DbNamingProps {
+            base: base.as_ref().into(),
+            name: this_name,
+            time: Some(Utc::now()),
+            uuid: Some(Uuid::new_v4()),
+            keep_full: false,
+        }
+    }
+}
+
 /// Postgres can only have a maximum identifier length of 63 characters, so this will take
 /// a passed-in name and truncate it with an MD5 hash based on the full name appended to the end.
 /// This is the same way that postgres will rename a too-long identifier when it is created
@@ -219,5 +239,67 @@ mod tests_to_db_id {
             }.to_db_id(),
             "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
         );
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: None,
+                time: None,
+                uuid: None,
+                keep_full: false,
+            }.to_db_id(),
+            "my_project",
+        );
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: Some("my_test".into()),
+                time: None,
+                uuid: None,
+                keep_full: false,
+            }.to_db_id(),
+            "my_project_my_test",
+        );
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: None,
+                time: Some(timestamp),
+                uuid: None,
+                keep_full: false,
+            }.to_db_id(),
+            "20241017203814_my_project",
+        );
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: None,
+                time: None,
+                uuid: Some(this_uuid),
+                keep_full: false,
+            }.to_db_id(),
+            "my_project_3a45686d_8213_48b3_b817_7e28c80f6e71",
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_dbnamingprops {
+    use super::*;
+    use chrono::Duration;
+
+    #[test]
+    fn test_new_default() {
+        let props = DbNamingProps::new_default("my_db", Some("my_test"));
+        let now = Utc::now();
+
+        assert_eq!(props.base, "my_db");
+        assert_eq!(props.name, Some("my_test".into()));
+        assert!(props.time.is_some());
+        // should be recent
+        let time_diff = now.signed_duration_since(props.time.unwrap());
+        assert!(time_diff < Duration::seconds(1), "Should be recent");
+        assert!(props.uuid.is_some());
+        assert!(Uuid::parse_str(&props.uuid.unwrap().to_string()).is_ok(), "UUID should be valid");
+        assert!(!props.keep_full, "`keep_full` should be `false` by default");
     }
 }
