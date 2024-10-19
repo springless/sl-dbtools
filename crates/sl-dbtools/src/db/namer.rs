@@ -7,16 +7,16 @@ use chrono::{DateTime, Utc};
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
-/// DbNameProps {
+/// let props = DbNamingProps {
 ///     base: "my_project",
-///     time: Some(timestamp_var), // 2024.10.17 20:38:14.1234
-///     uuid: Some(uuid_var), // "3a45686d-8213-48b3-b817-7e28c80f6e71"
+///     time: Some(timestamp_var), // eg. 2024.10.17 20:38:14.1234
+///     uuid: Some(uuid_var), // eg. "3a45686d-8213-48b3-b817-7e28c80f6e71"
 ///     name: "my_test",
 /// };
 /// ```
 ///
 /// This would yield a database with the full name:
-/// ```
+/// ```text
 /// {time}_{base}_{name}_{uuid}
 /// 20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71
 /// ```
@@ -25,7 +25,7 @@ use chrono::{DateTime, Utc};
 /// cuts the name short and adds the small hash value that postgres uses to truncate values
 /// at the end, yielding:
 ///
-/// ```
+/// ```text
 /// 20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c
 ///                                                         ^^^^
 ///                                                         hash
@@ -38,6 +38,7 @@ pub struct DbNamingProps {
     time: Option<DateTime<Utc>>,
     name: Option<String>,
     uuid: Option<Uuid>,
+    keep_full: bool,
 }
 
 /// Postgres can only have a maximum identifier length of 63 characters, so this will take
@@ -47,13 +48,20 @@ pub struct DbNamingProps {
 /// than taking up the full allowed 63, so this function does the same. Up until 63 characters,
 /// however, the name remains untouched.
 ///
-/// ```
-/// before: 20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71
-/// after:  20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c
-///                                                                 ^^^^
-///                                                                 hash
-/// before: short_identifier
-/// after:  short_identifier
+/// ```rust
+/// assert_eq!(
+///     truncate_identifier(
+///         "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71"
+///     ),
+///     "20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c",
+///     //                                                       ^^^^
+///     //                                                       hash
+/// assert_eq!(
+///     truncate_identifier(
+///         "short_identifier"
+///     ),
+///     "short_identifier",
+/// );
 /// ```
 pub fn truncate_identifier<T: AsRef<str>>(val: T) -> String {
     let v = val.as_ref();
@@ -72,21 +80,65 @@ pub fn truncate_identifier<T: AsRef<str>>(val: T) -> String {
     }
 }
 
-pub trait ToNameTime {
-    /// Converts a time structure in such a way that it complies with the time portion of the
-    /// database naming convention described above:
-    /// ```
-    /// yyyymmddHHMMSS
-    /// ```
-    fn to_name_time(&self) -> String;
+pub trait ToDbId {
+    /// Outputs a string formatted in a standardized way such that
+    /// it can be used as an identifier in the database.
+    fn to_db_id(&self) -> String;
 }
 
-fn get_now() -> DateTime<Utc> {
-    chrono::Utc::now()
+impl ToDbId for DateTime<Utc> {
+    /// Outputs a date in the format:
+    /// ```text
+    /// yyyymmddHHMMSS
+    /// ```
+    fn to_db_id(&self) -> String {
+        self.format("%Y%m%d%H%M%S").to_string()
+    }
+}
+
+impl ToDbId for Uuid {
+    /// Outputs the standard UUID string format, but with underscores
+    /// instead of dashes
+    /// ```rust
+    /// assert_eq!(
+    ///     uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
+    ///         .to_db_id(),
+    ///     "67e55044_10b1_426f_9247_bb680e5fe0c8",
+    /// );
+    /// ```
+    fn to_db_id(&self) -> String {
+        self.to_string()
+            .replace('-', "_")
+    }
+}
+
+impl ToDbId for DbNamingProps {
+    fn to_db_id(&self) -> String {
+        let mut parts: Vec<String> = Vec::new();
+
+        if let Some(part) = self.time {
+            parts.push(part.to_db_id());
+        }
+        parts.push(self.base.to_string());
+        if let Some(part) = &self.name {
+            parts.push(part.to_string());
+        }
+        if let Some(part) = self.uuid {
+            parts.push(part.to_db_id());
+        }
+
+        let combined = parts.join("_");
+
+        if self.keep_full {
+            combined
+        } else {
+            truncate_identifier(combined)
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
+mod tests_truncate_identifier {
     use super::*;
 
     #[test]
@@ -115,5 +167,57 @@ mod tests {
         let identifier = "000000000011111111112222222222333333333344444444445555555555666";
         let expected = "000000000011111111112222222222333333333344444444445555554308";
         assert_eq!(truncate_identifier(identifier), expected);
+    }
+}
+
+#[cfg(test)]
+mod tests_to_db_id {
+    use chrono::TimeZone;
+    use uuid::uuid;
+
+    use super::*;
+
+    #[test]
+    fn test_datetime_to_db_id() {
+        assert_eq!(
+            Utc.with_ymd_and_hms(2024, 10, 19, 10, 19, 20).unwrap()
+                .to_db_id(),
+            "20241019101920",
+        );
+    }
+
+    #[test]
+    fn test_uuid_to_db_id() {
+        assert_eq!(
+            uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
+                .to_db_id(),
+            "67e55044_10b1_426f_9247_bb680e5fe0c8",
+        );
+    }
+
+    #[test]
+    fn test_dbnamingprops_to_db_id() {
+        let timestamp = Utc.with_ymd_and_hms(2024, 10, 17, 20, 38, 14).unwrap();
+        let this_uuid = uuid!("3a45686d-8213-48b3-b817-7e28c80f6e71");
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: Some("my_test".into()),
+                time: Some(timestamp),
+                uuid: Some(this_uuid),
+                keep_full: false,
+            }.to_db_id(),
+            "20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c",
+        );
+        assert_eq!(
+            DbNamingProps {
+                base: "my_project".into(),
+                name: Some("my_test".into()),
+                time: Some(timestamp),
+                uuid: Some(this_uuid),
+                keep_full: true,
+            }.to_db_id(),
+            "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
+        );
     }
 }
