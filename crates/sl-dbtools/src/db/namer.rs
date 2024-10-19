@@ -1,4 +1,3 @@
-use std::time::SystemTime;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
@@ -39,6 +38,14 @@ pub struct DbNamingProps {
     name: Option<String>,
     uuid: Option<Uuid>,
     keep_full: bool,
+}
+
+// When called, an implementor of this trait should be able to generate a new version
+// of itself, but incorporating the provided "name" into the new database version, and
+// the rest of the `DbNamingProps` values.
+pub trait MakeNewConnectOpts {
+    /// Uses the default naming conventions described in `new_default` of `DbNamingProps`.
+    fn make_new_connection_default(&self, name: Option<&str>) -> Self;
 }
 
 impl DbNamingProps {

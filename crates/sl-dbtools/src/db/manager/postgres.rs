@@ -1,9 +1,36 @@
-use sqlx::{migrate::MigrateDatabase, Postgres};
-use crate::db::manager::DbManager;
+use sqlx::{migrate::MigrateDatabase, postgres::PgConnectOptions, Pool, Postgres, Row};
+use crate::{conn::create_pg_conn, db::{manager::DbManager, namer::{DbNamingProps, MakeNewConnectOpts, ToDbId}}, migration::MigrationVersion};
 
 pub struct PostgresDbManager {
     /// Connection string for the primary database
     url: String,
+    version_table: String,
+}
+
+impl PostgresDbManager {
+    pub async fn connect(&self) -> Result<Pool<Postgres>, ()> {
+        create_pg_conn(&self.url).await
+    }
+    async fn get_current_version(&self) -> Result<String, Box<dyn std::error::Error>> {
+    //async fn get_current_version(&self) -> Result<Option<crate::migration::MigrationVersion>, Box<dyn std::error::Error>> {
+        let conn = self.connect().await;
+        let conn = match conn {
+            Ok(c) => Ok(c),
+            // The error type returned from connect is (), which cannot be converted into
+            // std::error::Error
+            Err(_) => Err(std::io::Error::new(std::io::ErrorKind::NotConnected, "Could not connect to the database")),
+        }?;
+        let res = sqlx::query(
+            &format!(r#"
+                SELECT "version"
+                FROM "{}"
+            "#, self.version_table)
+        )
+            .fetch_one(&conn)
+            .await?;
+        let vers: String = res.try_get(0)?;
+        Ok(vers)
+    }
 }
 
 impl DbManager for PostgresDbManager {
@@ -18,20 +45,63 @@ impl DbManager for PostgresDbManager {
             .await?;
         Ok(dropped_db)
     }
+
+}
+
+impl MakeNewConnectOpts for PgConnectOptions {
+    fn make_new_connection_default(&self, name: Option<&str>) -> Self {
+        let base = if let Some(name) = self.get_database() {
+            name
+        } else {
+            "".into()
+        };
+        let new_name = DbNamingProps::new_default(base, name)
+            .to_db_id();
+        self.clone().database(&new_name)
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::test::TestEnv;
 
     #[tokio::test]
     async fn test_create_drop_postgres_db() {
         let test_env = TestEnv::from_env();
-        let mgr = PostgresDbManager { url: test_env.postgres_url.to_owned() };
+        let mgr = PostgresDbManager {
+            url: test_env.postgres_url.to_owned(),
+            version_table: "_schema_version".into(),
+        };
         let _ = mgr.create_database().await;
         assert!(Postgres::database_exists(&test_env.postgres_url).await.unwrap());
         let _ = mgr.drop_database().await;
         assert!(!Postgres::database_exists(&test_env.postgres_url).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_get_current_version() {
+        let test_env = TestEnv::from_env();
+        let mgr = PostgresDbManager {
+            url: test_env.postgres_url.to_owned(),
+            version_table: "sl_migration".into(),
+        };
+        let vers = mgr.get_current_version()
+            .await
+            .unwrap();
+        assert_eq!(vers, "My Version");
+    }
+
+    #[test]
+    fn test_make_new_connection_default() {
+        let url = "postgres://user:pass@localhost/dbname";
+        let conn = PgConnectOptions::from_str(url).unwrap();
+        let new_conn = conn.make_new_connection_default(Some("test_name"));
+        assert_ne!(
+            new_conn.get_database(),
+            conn.get_database(),
+        );
     }
 }
