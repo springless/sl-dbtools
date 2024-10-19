@@ -1,5 +1,16 @@
 use sqlx::{migrate::MigrateDatabase, postgres::PgConnectOptions, Pool, Postgres, Row};
-use crate::{conn::create_pg_conn, db::{manager::DbManager, namer::{DbNamingProps, MakeNewConnectOpts, ToDbId}}, migration::MigrationVersion};
+use crate::{
+    conn::create_pg_conn,
+    db::{
+        manager::DbManager,
+        namer::{
+            DbNamingProps,
+            MakeNewConnectOpts,
+            ToDbId,
+        },
+    },
+    migration::MigrationVersion,
+};
 
 pub struct PostgresDbManager {
     /// Connection string for the primary database
@@ -11,7 +22,7 @@ impl PostgresDbManager {
     pub async fn connect(&self) -> Result<Pool<Postgres>, ()> {
         create_pg_conn(&self.url).await
     }
-    async fn get_current_version(&self) -> Result<String, Box<dyn std::error::Error>> {
+    pub async fn get_current_version(&self) -> Result<String, Box<dyn std::error::Error>> {
     //async fn get_current_version(&self) -> Result<Option<crate::migration::MigrationVersion>, Box<dyn std::error::Error>> {
         let conn = self.connect().await;
         let conn = match conn {
@@ -46,6 +57,12 @@ impl DbManager for PostgresDbManager {
         Ok(dropped_db)
     }
 
+    async fn load_sql_file<P>(&self, p: P) -> Result<(), Box<dyn std::error::Error>>
+            where
+                P: AsRef<std::path::Path> {
+        let sql_path = p.as_ref();
+        Ok(())
+    }
 }
 
 impl MakeNewConnectOpts for PgConnectOptions {

@@ -16,6 +16,12 @@ impl DbManager for SqliteDbManager {
             .await?;
         Ok(dropped_db)
     }
+    async fn load_sql_file<P>(&self, p: P) -> Result<(), Box<dyn std::error::Error>>
+            where
+                P: AsRef<std::path::Path> {
+        let sql_path = p.as_ref();
+        Ok(())
+    }
 }
 
 #[cfg(test)]
