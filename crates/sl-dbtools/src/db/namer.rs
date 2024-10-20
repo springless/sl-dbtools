@@ -6,11 +6,15 @@ use chrono::{DateTime, Utc};
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
+/// use sl_dbtools::db::namer::DbNamingProps;
+/// use chrono::{DateTime, Utc, TimeZone};
+/// use uuid::uuid;
 /// let props = DbNamingProps {
-///     base: "my_project",
-///     time: Some(timestamp_var), // eg. 2024.10.17 20:38:14.1234
-///     uuid: Some(uuid_var), // eg. "3a45686d-8213-48b3-b817-7e28c80f6e71"
-///     name: "my_test",
+///     base: "my_project".into(),
+///     time: Some(Utc.with_ymd_and_hms(2024, 10, 17, 20, 38, 14).unwrap()),
+///     uuid: Some(uuid!("3a45686d-8213-48b3-b817-7e28c80f6e71")),
+///     name: Some("my_test".into()),
+///     keep_full: true,
 /// };
 /// ```
 ///
@@ -33,11 +37,11 @@ use chrono::{DateTime, Utc};
 /// It will do this for all database types, regardless whether it holds the same restrictions
 /// as Postgres, unless `keep_full` is set to `true`.
 pub struct DbNamingProps {
-    base: String,
-    time: Option<DateTime<Utc>>,
-    name: Option<String>,
-    uuid: Option<Uuid>,
-    keep_full: bool,
+    pub base: String,
+    pub time: Option<DateTime<Utc>>,
+    pub name: Option<String>,
+    pub uuid: Option<Uuid>,
+    pub keep_full: bool,
 }
 
 // When called, an implementor of this trait should be able to generate a new version
@@ -76,6 +80,7 @@ impl DbNamingProps {
 /// however, the name remains untouched.
 ///
 /// ```rust
+/// use sl_dbtools::db::namer::truncate_identifier;
 /// assert_eq!(
 ///     truncate_identifier(
 ///         "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71"
@@ -83,6 +88,7 @@ impl DbNamingProps {
 ///     "20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c",
 ///     //                                                       ^^^^
 ///     //                                                       hash
+/// );
 /// assert_eq!(
 ///     truncate_identifier(
 ///         "short_identifier"
@@ -127,8 +133,9 @@ impl ToDbId for Uuid {
     /// Outputs the standard UUID string format, but with underscores
     /// instead of dashes
     /// ```rust
+    /// use sl_dbtools::db::namer::ToDbId;
     /// assert_eq!(
-    ///     uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
+    ///     uuid::uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
     ///         .to_db_id(),
     ///     "67e55044_10b1_426f_9247_bb680e5fe0c8",
     /// );

@@ -9,7 +9,6 @@ use crate::{
             ToDbId,
         },
     },
-    migration::MigrationVersion,
 };
 
 pub struct PostgresDbManager {
@@ -19,7 +18,7 @@ pub struct PostgresDbManager {
 }
 
 impl PostgresDbManager {
-    pub async fn connect(&self) -> Result<Pool<Postgres>, ()> {
+    pub async fn connect(&self) -> Result<Pool<Postgres>, sqlx::Error> {
         create_pg_conn(&self.url).await
     }
     pub async fn get_current_version(&self) -> Result<String, Box<dyn std::error::Error>> {
@@ -58,9 +57,17 @@ impl DbManager for PostgresDbManager {
     }
 
     async fn load_sql_file<P>(&self, p: P) -> Result<(), Box<dyn std::error::Error>>
-            where
-                P: AsRef<std::path::Path> {
-        let sql_path = p.as_ref();
+    where
+        P: AsRef<std::path::Path>
+    {
+        let conn = create_pg_conn(&self.url).await?;
+        let raw_sql = tokio::fs::read_to_string(p.as_ref())
+            .await?;
+        let mut tx = conn.begin().await?;
+        sqlx::query(&raw_sql)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
@@ -86,6 +93,7 @@ mod tests {
     use crate::test::TestEnv;
 
     #[tokio::test]
+    #[ignore] // until we have a functional automated test db
     async fn test_create_drop_postgres_db() {
         let test_env = TestEnv::from_env();
         let mgr = PostgresDbManager {
@@ -99,6 +107,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore] // until we have a functional automated test db
     async fn test_get_current_version() {
         let test_env = TestEnv::from_env();
         let mgr = PostgresDbManager {

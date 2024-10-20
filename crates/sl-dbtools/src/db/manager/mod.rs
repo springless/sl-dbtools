@@ -1,7 +1,5 @@
 use std::path::Path;
 
-use crate::migration::MigrationVersion;
-
 /// Module for managing the creation and deletion of databases
 
 pub trait DbManager {
@@ -11,6 +9,11 @@ pub trait DbManager {
     async fn create_database(&self) -> Result<(), Box<dyn std::error::Error>>;
     #[allow(async_fn_in_trait)]
     async fn drop_database(&self) -> Result<(), Box<dyn std::error::Error>>;
+    /// This function abstracts away the steps necessary to:
+    /// 1. Load a SQL file
+    /// 2. Start a transaction
+    /// 3. Run that sql file on that transaction
+    /// 4. Commit the transaction
     #[allow(async_fn_in_trait)]
     async fn load_sql_file<P>(&self, p: P) -> Result<(), Box<dyn std::error::Error>>
         where

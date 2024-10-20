@@ -1,5 +1,5 @@
 use sqlx::{migrate::MigrateDatabase, Sqlite};
-use crate::db::manager::DbManager;
+use crate::{conn::create_sqlite_conn, db::manager::DbManager};
 
 pub struct SqliteDbManager {
     url: String,
@@ -17,9 +17,17 @@ impl DbManager for SqliteDbManager {
         Ok(dropped_db)
     }
     async fn load_sql_file<P>(&self, p: P) -> Result<(), Box<dyn std::error::Error>>
-            where
-                P: AsRef<std::path::Path> {
-        let sql_path = p.as_ref();
+    where
+        P: AsRef<std::path::Path>
+    {
+        let conn = create_sqlite_conn(&self.url).await?;
+        let raw_sql = tokio::fs::read_to_string(p.as_ref())
+            .await?;
+        let mut tx = conn.begin().await?;
+        sqlx::query(&raw_sql)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
         Ok(())
     }
 }
