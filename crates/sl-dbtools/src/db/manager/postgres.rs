@@ -90,12 +90,12 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::test::TestEnv;
+    use crate::test::TEST_ENV;
 
     #[tokio::test]
     #[ignore] // until we have a functional automated test db
     async fn test_create_drop_postgres_db() {
-        let test_env = TestEnv::from_env();
+        let test_env = TEST_ENV::new_from_env();
         let mgr = PostgresDbManager {
             url: test_env.postgres_url.to_owned(),
             version_table: "_schema_version".into(),
