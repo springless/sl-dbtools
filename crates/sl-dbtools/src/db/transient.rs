@@ -1,6 +1,6 @@
 use std::{path::PathBuf, str::FromStr};
 
-use sqlx::{migrate::MigrateDatabase, postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, PgConnection, Postgres};
+use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Connection, Database, Postgres};
 use crate::{
     db::namer::{MakeNewConnectOpts, DbNamingProps, ToDbId},
     util::pg,
@@ -75,17 +75,29 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
     async fn spawn_db(
          &self,
          name: Option<&str>,
-         _initial: Initial,
+         initial: Initial,
     ) -> Result<PgTransientDb, sqlx::Error> {
         // create database
         let transient_conn_opts = self.base_url
             .make_new_connection_default(name);
 
-        let _db_res = pg::create_owned_database(
-            &transient_conn_opts,
-            &self.admin_url
-        )
-            .await?;
+        let _db_res = match initial {
+            Initial::Empty => {
+                pg::create_owned_database(
+                    &transient_conn_opts,
+                    &self.admin_url,
+                )
+                    .await?
+            },
+            Initial::Template(template_url) => {
+                pg::create_owned_database_from_template(
+                    &transient_conn_opts,
+                    &PgConnectOptions::from_str(&template_url)?,
+                    &self.admin_url,
+                )
+                    .await?
+            },
+        };
 
         Ok(PgTransientDb {
             url: transient_conn_opts,

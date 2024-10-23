@@ -49,6 +49,32 @@ pub async fn create_owned_database(
     Ok(())
 }
 
+/// Creates a database, given an admin connection, and assigns ownership to the
+/// username provided in the base connection
+/// Shamelessly stolen and tweaked from core sqlx
+pub async fn create_owned_database_from_template(
+    to_create: &PgConnectOptions,
+    template: &PgConnectOptions,
+    admin_db: &PgConnectOptions,
+) -> Result<(), Error> {
+    let mut conn = admin_db.connect().await?;
+    let template_database = template.get_database()
+        .ok_or_else(|| Error::RowNotFound)?;
+    let database = to_create.get_database()
+        .ok_or_else(|| Error::RowNotFound)?;
+    let owner = to_create.get_username();
+
+    let _ = conn
+        .execute(&*format!(
+            "CREATE DATABASE \"{}\" WITH TEMPLATE \"{}\" OWNER \"{}\"",
+            database.replace('"', "\"\""),
+            template_database.replace('"', "\"\""),
+            owner.replace('"', "\"\""),
+        ))
+        .await?;
+
+    Ok(())
+}
 
 /// Drops a database, given an admin connection.
 /// Shamelessly stolen and tweaked from core sqlx
