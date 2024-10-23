@@ -26,6 +26,30 @@ pub fn parse_for_maintenance(
     maint_options
 }
 
+/// Creates a database, given an admin connection, and assigns ownership to the
+/// username provided in the base connection
+/// Shamelessly stolen and tweaked from core sqlx
+pub async fn create_owned_database(
+    to_create: &PgConnectOptions,
+    admin_db: &PgConnectOptions,
+) -> Result<(), Error> {
+    let mut conn = admin_db.connect().await?;
+    let database = to_create.get_database()
+        .ok_or_else(|| Error::RowNotFound)?;
+    let owner = to_create.get_username();
+
+    let _ = conn
+        .execute(&*format!(
+            "CREATE DATABASE \"{}\" OWNER \"{}\"",
+            database.replace('"', "\"\""),
+            owner.replace('"', "\"\""),
+        ))
+        .await?;
+
+    Ok(())
+}
+
+
 /// Drops a database, given an admin connection.
 /// Shamelessly stolen and tweaked from core sqlx
 pub async fn force_drop_database(

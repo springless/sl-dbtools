@@ -81,7 +81,10 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
         let transient_conn_opts = self.base_url
             .make_new_connection_default(name);
 
-        let _db_res = Postgres::create_database(&transient_conn_opts.to_url_lossy().to_string())
+        let _db_res = pg::create_owned_database(
+            &transient_conn_opts,
+            &self.admin_url
+        )
             .await?;
 
         Ok(PgTransientDb {
