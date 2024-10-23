@@ -72,19 +72,6 @@ impl DbManager for PostgresDbManager {
     }
 }
 
-impl MakeNewConnectOpts for PgConnectOptions {
-    fn make_new_connection_default(&self, name: Option<&str>) -> Self {
-        let base = if let Some(name) = self.get_database() {
-            name
-        } else {
-            "".into()
-        };
-        let new_name = DbNamingProps::new_default(base, name)
-            .to_db_id();
-        self.clone().database(&new_name)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
@@ -95,23 +82,21 @@ mod tests {
     #[tokio::test]
     #[ignore] // until we have a functional automated test db
     async fn test_create_drop_postgres_db() {
-        let test_env = TEST_ENV::new_from_env();
         let mgr = PostgresDbManager {
-            url: test_env.postgres_url.to_owned(),
+            url: TEST_ENV.postgres_url.to_owned(),
             version_table: "_schema_version".into(),
         };
         let _ = mgr.create_database().await;
-        assert!(Postgres::database_exists(&test_env.postgres_url).await.unwrap());
+        assert!(Postgres::database_exists(&TEST_ENV.postgres_url).await.unwrap());
         let _ = mgr.drop_database().await;
-        assert!(!Postgres::database_exists(&test_env.postgres_url).await.unwrap());
+        assert!(!Postgres::database_exists(&TEST_ENV.postgres_url).await.unwrap());
     }
 
     #[tokio::test]
     #[ignore] // until we have a functional automated test db
     async fn test_get_current_version() {
-        let test_env = TestEnv::from_env();
         let mgr = PostgresDbManager {
-            url: test_env.postgres_url.to_owned(),
+            url: TEST_ENV.postgres_url.to_owned(),
             version_table: "sl_migration".into(),
         };
         let vers = mgr.get_current_version()

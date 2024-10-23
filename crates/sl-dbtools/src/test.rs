@@ -2,6 +2,8 @@ use std::sync::LazyLock;
 
 use sqlx::{Database, Pool, Postgres};
 
+use crate::db::transient::{Initial, PgTransientDb, PgTransientDbBuilder, TransientDbBuilder};
+
 /// Utility functions for managing test databases
 
 pub fn setup_env() {
@@ -10,23 +12,8 @@ pub fn setup_env() {
 
 pub struct TestEnv {
     pub postgres_url: String,
+    pub postgres_admin_url: Option<String>,
     pub sqlite_url: String,
-}
-
-pub trait TestDb {
-    fn new_from_env(name: &str, initial: Initial) -> Self;
-}
-
-
-pub struct PgTestDb {
-    url: String,
-    conn: Option<Pool<Postgres>>,
-}
-
-impl PgTestDb {
-    pub fn cleanup(&self) {
-        
-    }
 }
 
 impl TestEnv {
@@ -35,18 +22,26 @@ impl TestEnv {
         TestEnv {
             postgres_url:
                 std::env::var("POSTGRES_URL").expect("Set POSTGRES_URL in the environment"),
+            postgres_admin_url:
+                std::env::var("POSTGRES_ADMIN_URL").ok(),
             sqlite_url:
                 std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
         }
     }
 
-    fn new_pg_db(&self) -> PgTestDb {
-
+    pub async fn new_pg_db(&self, test_name: &str, initial: Initial) -> PgTransientDb {
+        let transient_db_builder = PgTransientDbBuilder::new(
+            &self.postgres_url,
+            self.postgres_admin_url.as_deref(),
+        )
+            .expect("Failed to create transient db builder");
+        transient_db_builder.spawn_db(Some(test_name), initial).await
+            .expect("Failed to create transient db")
     }
 }
 
 pub static TEST_ENV: LazyLock<TestEnv> = LazyLock::new(|| {
-    TestEnv::from_env()
+    TestEnv::new_from_env()
 });
 
 pub fn get_testenv() {
@@ -59,11 +54,10 @@ mod tests {
 
     #[test]
     fn test_test_env() {
-        let pg_url = &SINGLETON_TEST_ENV.postgres_url;
-        expec
+        let pg_url = &TEST_ENV.postgres_url;
         assert_eq!(
             pg_url,
-            std::env::var("POSTGRES_URL").unwrap(),
+            &std::env::var("POSTGRES_URL").unwrap(),
         );
     }
 }

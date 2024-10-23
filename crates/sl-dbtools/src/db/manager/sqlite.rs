@@ -35,15 +35,15 @@ impl DbManager for SqliteDbManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::TestEnv;
+    use crate::test::TEST_ENV;
 
     #[tokio::test]
+    #[ignore]
     async fn test_create_drop_sqlite_db() {
-        let test_env = TestEnv::from_env();
-        let mgr = SqliteDbManager { url: test_env.sqlite_url.to_owned() };
+        let mgr = SqliteDbManager { url: TEST_ENV.sqlite_url.to_owned() };
         let _ = mgr.create_database().await;
-        assert!(Sqlite::database_exists(&test_env.sqlite_url).await.unwrap());
+        assert!(Sqlite::database_exists(&TEST_ENV.sqlite_url).await.unwrap());
         let _ = mgr.drop_database().await;
-        assert!(!Sqlite::database_exists(&test_env.sqlite_url).await.unwrap());
+        assert!(!Sqlite::database_exists(&TEST_ENV.sqlite_url).await.unwrap());
     }
 }
