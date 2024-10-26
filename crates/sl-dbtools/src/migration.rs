@@ -209,7 +209,6 @@ mod tests {
         assert_eq!(
             MigrationVersion::load_migration_folder(TEST_FOLDER).unwrap(),
             vec![
-                MigrationVersion { version: "00-create-version-table".into() },
                 MigrationVersion { version: "01-create-user-table".into() },
                 MigrationVersion { version: "02-update-user-table".into() },
                 MigrationVersion { version: "03-clear-password".into() },
@@ -234,7 +233,7 @@ mod tests {
                 .unwrap()
                 .search_version(TargetVersion::First)
                 .unwrap(),
-            &MigrationVersion { version: "00-create-version-table".into() },
+            &MigrationVersion { version: "01-create-user-table".into() },
         );
         // Name
         assert_eq!(
@@ -257,7 +256,6 @@ mod tests {
             ).unwrap(),
             MigrationPath {
                 versions: vec![
-                    MigrationVersion { version: "00-create-version-table".into() },
                     MigrationVersion { version: "01-create-user-table".into() },
                     MigrationVersion { version: "02-update-user-table".into() },
                     MigrationVersion { version: "03-clear-password".into() },
@@ -295,7 +293,6 @@ mod tests {
                     MigrationVersion { version: "04-remove-password".into() },
                     MigrationVersion { version: "03-clear-password".into() },
                     MigrationVersion { version: "02-update-user-table".into() },
-                    MigrationVersion { version: "01-create-user-table".into() },
                 ],
                 direction: MigrationDirection::Dn,
             }
@@ -318,8 +315,8 @@ mod tests {
     #[test]
     fn test_get_migration_version_file_name() {
         assert_eq!(
-            MigrationVersion { version: "00-create-version-table".into() }.file_name(MigrationDirection::Dn),
-            "00-create-version-table.dn.sql",
+            MigrationVersion { version: "01-create-user-table".into() }.file_name(MigrationDirection::Dn),
+            "01-create-user-table.dn.sql",
         );
     }
 
@@ -334,7 +331,6 @@ mod tests {
                 .unwrap()
                 .migration_files(TEST_FOLDER),
             vec![
-                Some("../../tests/migrations/00-create-version-table.up.sql".into()),
                 Some("../../tests/migrations/01-create-user-table.up.sql".into()),
                 Some("../../tests/migrations/02-update-user-table.up.sql".into()),
                 Some("../../tests/migrations/03-clear-password.up.sql".into()),
@@ -354,7 +350,6 @@ mod tests {
                 Some("../../tests/migrations/04-remove-password.dn.sql".into()),
                 None,
                 Some("../../tests/migrations/02-update-user-table.dn.sql".into()),
-                Some("../../tests/migrations/01-create-user-table.dn.sql".into()),
             ],
         );
     }

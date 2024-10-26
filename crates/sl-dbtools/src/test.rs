@@ -1,8 +1,13 @@
 use std::sync::LazyLock;
 
-use sqlx::{Database, Pool, Postgres};
-
-use crate::db::transient::{Initial, PgTransientDb, PgTransientDbBuilder, TransientDbBuilder};
+use crate::db::transient::{
+    Initial,
+    TransientDbBuilder,
+    pg::{
+        PgTransientDb,
+        PgTransientDbBuilder,
+    },
+};
 
 /// Utility functions for managing test databases
 

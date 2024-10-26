@@ -3,36 +3,9 @@ use std::{path::PathBuf, str::FromStr};
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Connection, Database, Postgres};
 use crate::{
     db::namer::{MakeNewConnectOpts, DbNamingProps, ToDbId},
-    util::pg,
+    util,
 };
-
-pub enum Initial {
-    Empty,
-    Template(String),
-}
-
-pub enum Seed {
-    Sql(String),
-    File(PathBuf),
-}
-
-pub trait TransientDbBuilder<D: Database, T: TransientDb<D>> {
-    /// Creates a new transient database with the provided options
-    #[allow(async_fn_in_trait)]
-    async fn spawn_db(&self, name: Option<&str>, initial: Initial) -> Result<T, sqlx::Error>;
-    /// Returns all of the known transient databases that were spawned with the provided
-    /// `base`, and optionally `name`. Used primarily to clean up hanging transient databases.
-    #[allow(async_fn_in_trait)]
-    async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<T>, sqlx::Error>;
-}
-
-pub trait TransientDb<D: Database> {
-    #[allow(async_fn_in_trait)]
-    async fn drop(self) -> Result<(), sqlx::Error>;
-    #[allow(async_fn_in_trait)]
-    async fn seed(&self, seed: Seed) -> Result<(), sqlx::Error>;
-    fn conn_opts(&self) -> &<D::Connection as Connection>::Options;
-}
+use super::{TransientDb, TransientDbBuilder, Initial, Seed};
 
 pub struct PgTransientDbBuilder {
     base_url: PgConnectOptions,
@@ -49,7 +22,7 @@ impl PgTransientDbBuilder {
         let base_opts = PgConnectOptions::from_str(base_url)?;
         let admin_opts = match admin_url {
             Some(url) => PgConnectOptions::from_str(url)?,
-            None => pg::parse_for_maintenance(&base_opts),
+            None => util::pg::parse_for_maintenance(&base_opts),
         };
         Ok(PgTransientDbBuilder {
             base_url: base_opts,
@@ -83,14 +56,14 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
 
         let _db_res = match initial {
             Initial::Empty => {
-                pg::create_owned_database(
+                util::pg::create_owned_database(
                     &transient_conn_opts,
                     &self.admin_url,
                 )
                     .await?
             },
             Initial::Template(template_url) => {
-                pg::create_owned_database_from_template(
+                util::pg::create_owned_database_from_template(
                     &transient_conn_opts,
                     &PgConnectOptions::from_str(&template_url)?,
                     &self.admin_url,
@@ -113,7 +86,7 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
 
 impl TransientDb<Postgres> for PgTransientDb {
     async fn drop(self) -> Result<(), sqlx::Error> {
-        pg::force_drop_database(
+        util::pg::force_drop_database(
             &self.url,
             &self.admin_url,
         ).await
@@ -150,21 +123,19 @@ mod tests {
     use super::*;
     use crate::test::TEST_ENV;
 
-    mod pg {
-        use super::*;
+    use super::*;
 
-        #[tokio::test]
-        async fn test_db_create() {
-            let testdb = TEST_ENV.new_pg_db(
-                "test_db_create",
-                Initial::Empty,
-            ).await;
-            let conn = PgPoolOptions::new()
-                .connect_with(testdb.url.clone())
-                .await;
-            assert!(matches!(conn, Ok(_)));
-            let drop = testdb.drop().await;
-            assert!(matches!(drop, Ok(_)));
-        }
+    #[tokio::test]
+    async fn test_db_create() {
+        let testdb = TEST_ENV.new_pg_db(
+            "test_db_create",
+            Initial::Empty,
+        ).await;
+        let conn = PgPoolOptions::new()
+            .connect_with(testdb.url.clone())
+            .await;
+        assert!(matches!(conn, Ok(_)));
+        let drop = testdb.drop().await;
+        assert!(matches!(drop, Ok(_)));
     }
 }
