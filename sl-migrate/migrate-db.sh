@@ -58,14 +58,13 @@ run to the latest migration file.
 db_uri=${PROJECT_DB}
 target_version=
 migration_folder=${MIGRATION_DIR}
-migration_table=${MIGRATION_TABLE}
+migration_view=${MIGRATION_VIEW_NAME}
 up_versions=
 dn_versions=
 cur_version=
 
 migration_path_direction=
 migration_path=
-migration_table_exists=false
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -88,7 +87,7 @@ parse_args() {
         ;;
       -m|--migrationtable)
         shift
-        migration_table="${1}"
+        migration_view="${1}"
         shift
         ;;
       -h|--help)
@@ -122,7 +121,7 @@ parse_args() {
     echo "$USAGE"
     exit 1
   fi
-  if [ -z ${migration_table} ]; then
+  if [ -z ${migration_view} ]; then
     echo "ERROR: Please set -m"
     echo
     echo "$USAGE"
@@ -150,9 +149,8 @@ get_all_versions() {
 get_current_version() {
   # -t (tuples only) -A (remove formatting)
   cur_version=$(psql "${db_uri}" -tA -c "
-  SELECT version FROM \"${migration_table}\"
-  ORDER BY version DESC
-  LIMIT 1")
+  SELECT version FROM \"${migration_view}\"
+  ")
   echo "Cur version: $cur_version"
 }
 
@@ -228,6 +226,10 @@ run_migration_path() {
       {
         echo "BEGIN;";
         cat "${migration_file}";
+        # Update the version view
+        echo ";"
+        echo "CREATE OR REPLACE VIEW ${migration_view} AS"
+        echo "SELECT '${v}'::TEXT AS version;"
         echo "COMMIT;";
       } | psql -v ON_ERROR_STOP=on "${db_uri}"
       exit_code=$?
@@ -240,13 +242,6 @@ run_migration_path() {
       echo "Nothing to be done for: ${v}"
     fi
 
-    if [[ -z "${cur_version}" ]]; then
-      # this is the first version added to the database, we need to insert a value
-      psql "${db_uri}" -c "INSERT INTO \"${migration_table}\" (version) VALUES ('${v}')"
-    else
-      # version is already inserted, update the existing row
-      psql "${db_uri}" -c "UPDATE \"${migration_table}\" SET version='${v}'"
-    fi
     cur_version="${v}"
   done
 }
@@ -256,7 +251,7 @@ run() {
   echo "URI:    ${db_uri}"
   echo "Target: ${target_version}"
   echo "Folder: ${migration_folder}"
-  echo "Table:  ${migration_table}"
+  echo "View:   ${migration_view}"
   get_all_versions
   get_current_version
   get_migrate_path
