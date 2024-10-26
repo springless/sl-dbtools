@@ -17,8 +17,6 @@ So, given a folder with the contents:
 
 ```
 MyMigrationFolder
-| 00-create-version-table.dn.sql
-| 00-create-version-table.up.sql
 | 01-create-user-table.dn.sql
 | 01-create-user-table.up.sql
 | 02-update-user-table.dn.sql
@@ -28,21 +26,22 @@ MyMigrationFolder
 \ 04-remove-password.up.sql
 ```
 
-There are 5 different versions of the database here, so if you are starting from a new
+There are 4 different versions of the database here, so if you are starting from a new
 database and attempt to migrate to the latest version, it will run:
 
 ```
-- 00-create-version-table.up.sql
 - 01-create-user-table.up.sql
 - 02-update-user-table.up.sql
 - 03-clear-password.up.sql
 - 04-remove-password.up.sql
 ```
 
-The version table will typically only ever have one row in it, and that value will be the
-version name for the current schema version, which is everything up until the postfix and
-extension. For example, if we updated to `HEAD` with the migrations above, the final version
-would be `04-remove-password`.
+Whenever a migration is applied successfully the system creates a view with the same name
+as the `MIGRATION_VIEW_NAME` environment variable. This view returns a static value, which is
+the version name for the current schema version. This name is everything up until the
+postfix and extension of the `up` migration that we have just finished. For example,
+if we updated to `HEAD` with the migrations above, the final version would be
+`04-remove-password`.
 
 If we then downgrade, for example to version `01-create-user-table`, it will run:
 
@@ -52,49 +51,72 @@ If we then downgrade, for example to version `01-create-user-table`, it will run
 ```
 
 You'll notice it skipped `03-clear-password`. This is just because that downgrade does not exist,
-so it is considered a no-op. It's not strictly necessary to use the downgrade files, omitting
+so it is considered a no-op. It's not strictly necessary to create the downgrade files, omitting
 them will just obviously mean that rolling back changes will not be supported. You can reference
 the sample migrations folder in the `tests` directory of this repository if you still need
 more clarity on how this part of the system works, but there's not much more to it.
-
-## First Migration
-
-The first migration has to include the version table that will be used to track the schema
-version. This can be named anything you want, but must have a `version` column which is the
-only column that must be set. You can see an example in
-`tests/migrations/00-create-version-table.up.sql`, but fundamentally for postgres the file can
-just include the following:
-
-```sql
-CREATE TABLE "_schema_version" (
-  version TEXT NOT NULL PRIMARY KEY
-);
-```
-
-This can be a part of a larger file setting up other tables, or a standalone file as it is
-in the `tests` folder, but the overall point is that the version tracking table must exist
-by the end of the first migration.
 
 ## Naming migration files
 
 The sample migrations folder uses a simple number prefix on the filename to keep order, but
 any filename is acceptable, just so long as sorting them alphabetically yields the correct
-order in which to run the migrations. If the migrations folder is getting too cluttered and you
-would like to clean it up, you can manually combine migrations, or just change the first file
-to a full schema dump, and either keep the name of the file the same as the latest version,
-or rename the file and then update the value in the migration version table to match the new
-version name. For instance if I wanted to condense the above migrations, I could take a full
-schema dump and place it in a file called `04-remove-password.up.sql`, or place it in a file
-called something like `00-initial-schema.up.sql` and then manually run:
+order in which to run the migrations.
 
-```sql
-UPDATE TABLE "_schema_version"
-SET "version" = '00-initial-schema';
+### Collapsing migrations
+
+If the migrations folder is getting too cluttered and you would like to clean it up by setting
+a new baseline initial migration, you can manually combine migrations, or just change the first
+file to a full schema dump. The only file you CANNOT rename without consequence is the
+current schema version for the database being migrated.
+
+So if you are, for example, trying to combine the existing schema into a single file as a new
+baseline, you have a few options:
+
+#### Create a no-op `up` migration
+Let's say that you have this migration folder:
+
+```
+- 01-create-user-table.up.sql
+- 02-update-user-table.up.sql
+- 03-clear-password.up.sql
+- 04-remove-password.up.sql
 ```
 
-And then the system would continue as normal.
+And you are currentlty on `04-remove-password`. You could create a new empty up migration,
+called `05-baseline`:
 
-## Why No Automated Migrations
+```
+- 01-create-user-table.up.sql
+- 02-update-user-table.up.sql
+- 03-clear-password.up.sql
+- 04-remove-password.up.sql
+- 05-baseline.up.sql
+```
+
+Perform the migration on **all** managed databases, and then change the contents of
+`05-baseline.up.sql` to be the full schema dump. After that point, you could remove the
+rest of the preceding files, leaving you with only:
+
+```
+- 05-baseline.up.sql
+```
+
+#### Manually changing version
+
+Alternatively, if you needed to change the version name for whatever reason you are
+always able to override the view that declares the current schema. For example, if
+you wanted to rename your schema version to `00-initial-schema`:
+
+```sql
+CREATE OR REPLACE VIEW _schema_version AS
+SELECT '00-initial-schema'::TEXT AS version;
+```
+
+The thing to be aware of with all of these, however, is that if you are trying to keep
+multiple databases in sync then just make sure to get all of them onto the same version number
+prior to attempting to re-baseline, as is the case with any migration system.
+
+## Why No Schema Change Detection
 
 This does not do any automated migration generation or schema change detections, primarily
 because that's a lot of work that has been done better by others than I would be able to

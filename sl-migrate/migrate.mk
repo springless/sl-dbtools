@@ -50,7 +50,7 @@ migrate-db-head:
 		--uri $(MIGRATION_URL) \
 		--target HEAD \
 		--directory $(MIGRATION_DIR) \
-		--migrationtable $(MIGRATION_TABLE)
+		--migrationtable $(MIGRATION_VIEW_NAME)
 
 seed-db:
 	psql $(MIGRATION_URL) \
