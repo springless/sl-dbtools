@@ -151,7 +151,10 @@ impl TransientDb<Postgres> for PgTransientDb {
 mod tests {
     use super::*;
     use crate::test::TEST_ENV;
-    use sqlx::Row;
+    use sqlx::{
+        Row,
+        ConnectOptions,
+    };
 
     #[tokio::test]
     async fn test_db_create() {
@@ -226,5 +229,46 @@ mod tests {
         assert_eq!(val, "00-first-value");
 
         let _ = testdb.drop().await;
+    }
+
+    #[tokio::test]
+    async fn test_db_create_template() {
+        let template_testdb = TEST_ENV.new_pg_db(
+            "test_db_create_template",
+            Initial::Empty,
+            vec![
+                Seed::Sql(r#"
+                CREATE TABLE my_table (
+                    id SERIAL PRIMARY KEY
+                    ,value TEXT NOT NULL
+                );
+                INSERT INTO my_table (value) VALUES
+                ('00-first-value')
+                ,('01-second-value')
+                ,('02-third-value');
+                "#.to_string()),
+            ],
+        ).await;
+        let created_testdb = TEST_ENV.new_pg_db(
+            "test_db_create_template_created",
+            Initial::Template(template_testdb.url.to_url_lossy().to_string()),
+            vec![],
+        ).await;
+
+        let conn = PgPoolOptions::new()
+            .connect_with(created_testdb.url.clone())
+            .await
+            .unwrap();
+        let row = sqlx::query("SELECT value FROM my_table ORDER BY value ASC")
+            .fetch_one(&conn)
+            .await
+            .expect("");
+
+        let val: String = row.try_get("value").expect("");
+
+        assert_eq!(val, "00-first-value");
+
+        let _ = template_testdb.drop().await;
+        let _ = created_testdb.drop().await;
     }
 }
