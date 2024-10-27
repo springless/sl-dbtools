@@ -10,15 +10,22 @@ use super::{TransientDb, TransientDbBuilder, Initial, Seed};
 pub struct PgTransientDbBuilder {
     base_url: PgConnectOptions,
     admin_url: PgConnectOptions,
+    name: Option<String>,
+    initial: Initial,
+    seeds: Vec<Seed>,
 }
 
 pub struct PgTransientDb {
-    url: PgConnectOptions,
+    pub url: PgConnectOptions,
     admin_url: PgConnectOptions,
 }
 
 impl PgTransientDbBuilder {
-    pub fn new(base_url: &str, admin_url: Option<&str>) -> Result<Self, sqlx::Error> {
+    pub fn new(
+        base_url: &str,
+        admin_url: Option<&str>,
+        initial: Initial,
+    ) -> Result<Self, sqlx::Error> {
         let base_opts = PgConnectOptions::from_str(base_url)?;
         let admin_opts = match admin_url {
             Some(url) => PgConnectOptions::from_str(url)?,
@@ -27,6 +34,9 @@ impl PgTransientDbBuilder {
         Ok(PgTransientDbBuilder {
             base_url: base_opts,
             admin_url: admin_opts,
+            name: None,
+            initial,
+            seeds: vec![],
         })
     }
 }
@@ -45,16 +55,29 @@ impl MakeNewConnectOpts for PgConnectOptions {
 }
 
 impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
-    async fn spawn_db(
-         &self,
-         name: Option<&str>,
-         initial: Initial,
+    fn add_seed(mut self, seed: Seed) -> Self {
+        self.seeds.push(seed);
+        self
+    }
+
+    fn set_seeds(mut self, seeds: Vec<Seed>) -> Self {
+        self.seeds = seeds;
+        self
+    }
+
+    fn set_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
+    async fn build(
+         self,
     ) -> Result<PgTransientDb, sqlx::Error> {
         // create database
         let transient_conn_opts = self.base_url
-            .make_new_connection_default(name);
+            .make_new_connection_default(self.name.as_deref());
 
-        let _db_res = match initial {
+        let _db_res = match &self.initial {
             Initial::Empty => {
                 util::pg::create_owned_database(
                     &transient_conn_opts,
@@ -72,10 +95,16 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
             },
         };
 
-        Ok(PgTransientDb {
+        let transient_db = PgTransientDb {
             url: transient_conn_opts,
             admin_url: self.admin_url.to_owned(),
-        })
+        };
+
+        for seed in self.seeds {
+            let _ = transient_db.seed(seed).await?;
+        }
+
+        Ok(transient_db)
     }
 
     async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<PgTransientDb>, sqlx::Error> {
@@ -106,7 +135,7 @@ impl TransientDb<Postgres> for PgTransientDb {
             },
         };
         let mut tx = conn.begin().await?;
-        sqlx::query(&raw_sql)
+        sqlx::raw_sql(&raw_sql)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -122,6 +151,7 @@ impl TransientDb<Postgres> for PgTransientDb {
 mod tests {
     use super::*;
     use crate::test::TEST_ENV;
+    use sqlx::Row;
 
     use super::*;
 
@@ -130,6 +160,7 @@ mod tests {
         let testdb = TEST_ENV.new_pg_db(
             "test_db_create",
             Initial::Empty,
+            vec![],
         ).await;
         let conn = PgPoolOptions::new()
             .connect_with(testdb.url.clone())
@@ -137,5 +168,30 @@ mod tests {
         assert!(matches!(conn, Ok(_)));
         let drop = testdb.drop().await;
         assert!(matches!(drop, Ok(_)));
+    }
+
+    #[tokio::test]
+    async fn test_db_create_seeded_file() {
+        let testdb = TEST_ENV.new_pg_db(
+            "test_db_create_seeded_file",
+            Initial::Empty,
+            vec![
+                Seed::File("pg/00-test-seed.sql".into()),
+            ],
+        ).await;
+        let conn = PgPoolOptions::new()
+            .connect_with(testdb.url.clone())
+            .await
+            .unwrap();
+        let row = sqlx::query("SELECT username FROM \"user\" ORDER BY username ASC")
+            .fetch_one(&conn)
+            .await
+            .expect("");
+
+        let name: String = row.try_get("username").expect("");
+
+        assert_eq!(name, "user1");
+
+        let _ = testdb.drop().await;
     }
 }

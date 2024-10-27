@@ -15,9 +15,15 @@ pub enum Seed {
 }
 
 pub trait TransientDbBuilder<D: Database, T: TransientDb<D>> {
+    // Add a seed to run after creating the database. If this is called multiple times,
+    // it should run multiple seeds, in the order provided.
+    fn add_seed(self, seed: Seed) -> Self;
+    fn set_seeds(self, seeds: Vec<Seed>) -> Self;
+    /// Sets the addon name of the database
+    fn set_name(self, name: String) -> Self;
     /// Creates a new transient database with the provided options
     #[allow(async_fn_in_trait)]
-    async fn spawn_db(&self, name: Option<&str>, initial: Initial) -> Result<T, sqlx::Error>;
+    async fn build(self) -> Result<T, sqlx::Error>;
     /// Returns all of the known transient databases that were spawned with the provided
     /// `base`, and optionally `name`. Used primarily to clean up hanging transient databases.
     #[allow(async_fn_in_trait)]
