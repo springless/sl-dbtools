@@ -153,8 +153,6 @@ mod tests {
     use crate::test::TEST_ENV;
     use sqlx::Row;
 
-    use super::*;
-
     #[tokio::test]
     async fn test_db_create() {
         let testdb = TEST_ENV.new_pg_db(
@@ -191,6 +189,41 @@ mod tests {
         let name: String = row.try_get("username").expect("");
 
         assert_eq!(name, "user1");
+
+        let _ = testdb.drop().await;
+    }
+
+    #[tokio::test]
+    async fn test_db_create_seeded_sql() {
+        let testdb = TEST_ENV.new_pg_db(
+            "test_db_create_seeded_sql",
+            Initial::Empty,
+            vec![
+                Seed::Sql(r#"
+                CREATE TABLE my_table (
+                    id SERIAL PRIMARY KEY
+                    ,value TEXT NOT NULL
+                );
+                INSERT INTO my_table (value) VALUES
+                ('00-first-value')
+                ,('01-second-value')
+                ,('02-third-value');
+                "#.to_string()),
+            ],
+        ).await;
+
+        let conn = PgPoolOptions::new()
+            .connect_with(testdb.url.clone())
+            .await
+            .unwrap();
+        let row = sqlx::query("SELECT value FROM my_table ORDER BY value ASC")
+            .fetch_one(&conn)
+            .await
+            .expect("");
+
+        let val: String = row.try_get("value").expect("");
+
+        assert_eq!(val, "00-first-value");
 
         let _ = testdb.drop().await;
     }
