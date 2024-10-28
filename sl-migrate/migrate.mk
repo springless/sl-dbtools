@@ -35,7 +35,7 @@ CLEANUP_PG_DUMP := sed '/^SET/d;/^--/d;' | sed '/^$$/N;/^\n$$/D'
 
 schema-version:
 	psql $(MIGRATION_URL) \
-		-c "SELECT version FROM $(MIGRATION_TABLE) ORDER BY version DESC LIMIT 1"
+		-c "SELECT version FROM $(MIGRATION_VIEW_NAME) ORDER BY version DESC LIMIT 1"
 
 create-db:
 	psql $(ADMIN_DB) \
@@ -50,7 +50,7 @@ migrate-db-head:
 		--uri $(MIGRATION_URL) \
 		--target HEAD \
 		--directory $(MIGRATION_DIR) \
-		--migrationtable $(MIGRATION_VIEW_NAME)
+		--migrationview $(MIGRATION_VIEW_NAME)
 
 seed-db:
 	psql $(MIGRATION_URL) \
