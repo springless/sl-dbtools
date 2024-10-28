@@ -48,7 +48,7 @@ run to the latest migration file.
       recent version.
   -d, --directory DIR
       Migration file directory location.
-  -m, --migrationtable TABLE_NAME
+  -m, --migrationview TABLE_NAME
       Name of the table that should hold migration information.
   -h, --help
       Show this information
@@ -85,7 +85,7 @@ parse_args() {
         migration_folder="${1%/}"
         shift
         ;;
-      -m|--migrationtable)
+      -m|--migrationview)
         shift
         migration_view="${1}"
         shift
