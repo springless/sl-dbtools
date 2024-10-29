@@ -1,6 +1,6 @@
 use clap::Parser;
-use sl_dbtools::cli::Args;
+use sl_dbtools::cli::SlArgs;
 
 fn main() {
-    Args::parse().run();
+    SlArgs::parse().run();
 }
