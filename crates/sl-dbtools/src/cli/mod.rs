@@ -1,6 +1,11 @@
+use std::str::FromStr;
+
 use clap::{Parser, Subcommand};
 use migrate::MigrateArgs;
+use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, Postgres};
 use temp::TempArgs;
+
+use crate::util::{self, pg::parse_for_maintenance};
 
 mod migrate;
 mod temp;
@@ -77,7 +82,59 @@ impl SlSubcommand {
     }
 }
 
+/// The name of the environment variable that holds the database url
+const ENV_DATABASE_URL: &str = "DATABASE_URL";
+const ENV_DATABASE_URL_ADMIN: &str = "DATABASE_URL_ADMIN";
+
 impl SlArgs {
+    /// Gets the main database URL, which will either be provided as a command line argument
+    /// or pulled from the environment.
+    fn get_url(&self) -> Option<String> {
+        match &self.url {
+            Some(url) => Some(url.to_owned()),
+            None => std::env::var(ENV_DATABASE_URL).ok(),
+        }
+    }
+
+    fn get_db_conn_opts(&self) -> Option<Result<PgConnectOptions, sqlx::Error>> {
+        match self.get_url() {
+            Some(url) => Some(PgConnectOptions::from_str(&url)),
+            None => None,
+        }
+    }
+
+    fn get_admin_url(&self) -> Option<String> {
+        match &self.admin_url {
+            Some(url) => Some(url.to_owned()),
+            None => {
+                match std::env::var(ENV_DATABASE_URL_ADMIN).ok() {
+                    Some(url) => Some(url.to_owned()),
+                    None => {
+                        match self.get_db_conn_opts() {
+                            Some(Ok(conn_opts)) => {
+                                let dbconn = parse_for_maintenance(&conn_opts);
+                                Some(dbconn.to_url_lossy().to_string())
+                            }
+                            _ => None,
+                        }
+                    },
+                }
+            },
+        }
+    }
+
+    fn get_admin_conn_opts(&self) -> Option<Result<PgConnectOptions, sqlx::Error>> {
+        match self.get_admin_url() {
+            Some(url) => Some(PgConnectOptions::from_str(&url)),
+            None => None,
+        }
+    }
+
+    fn print_config(&self) {
+        println!("Main Database:  {}", self.get_url().unwrap_or("NONE".to_owned()));
+        println!("Admin Database: {}", self.get_admin_url().unwrap_or("NONE".to_owned()));
+    }
+
     pub fn run(&self) {
         // attempt to read a `.env` file unless explicitly told not to
         if !self.no_env {
@@ -88,6 +145,9 @@ impl SlArgs {
                 // otherwise attempt to read the standard `.env` file
                 dotenv::dotenv().ok();
             }
+        }
+        if !self.quiet {
+            self.print_config();
         }
         let _ = &self.command.run(self);
     }
