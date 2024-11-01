@@ -1,5 +1,7 @@
 use clap::Args;
 
+use crate::migration::MigrationPath;
+
 use super::SlArgs;
 
 /// Manages the migration status of the database, including running migrations, checking
@@ -29,8 +31,36 @@ pub struct MigrateArgs {
     #[arg(value_name="TARGET", index=1)]
     pub target: Option<String>,
 
-    /// Prints out the sequence of migration files that would run with the specified target
+    /// The directory in which all of the migration files are held. Migrations are raw SQL
+    /// files that represent an up or down migration of the schema. They should be named
+    /// according to whether they are an up or down migration, and named in such a way that
+    /// sorting them in lexicographical order puts them in the the order that they should be
+    /// run. For example:
+    ///
+    /// ```
+    /// 01-create-user-table.dn.sql <-- a down migration
+    /// 01-create-user-table.up.sql <-- an up migration
+    /// 02-update-user-table.up.sql <-- the second up migration
+    /// ```
+    ///
+    /// Down migrations should undo the changes made in an up migration, but are not strictly
+    /// necessary to include.
+    ///
+    /// The location of the directory can also be provided in the `MIGRATION_DIR` environment
+    /// variable. This flag takes precedence over the environment.
     #[arg(short, long)]
+    pub dir: Option<String>,
+
+    /// The name of the view that tracks migrations. Whenever a migration is applied, this
+    /// view is updated to return the version that the schema is currently on.
+    ///
+    /// The name of this view can also be provided by the `MIGRATION_VIEW_NAME` environment
+    /// variable. This flag takes precedence over the environment.
+    #[arg(short, long)]
+    pub view_name: Option<String>,
+
+    /// Prints out the sequence of migration files that would run with the specified target
+    #[arg(short = 'D', long)]
     pub dry_run: bool,
 
     /// Under normal circumstances you will be told what is going to happen and asked to
@@ -64,11 +94,38 @@ pub struct MigrateArgs {
     /// but if you workflow is designed around keeping each schema as a separate entity,
     /// migrated independently, then this lets you specify which schema is being migrated.
     #[arg(short, long)]
-    pub schema_folders: bool,
+    pub schema_dir: bool,
 }
 
+const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
+const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
+
 impl MigrateArgs {
+    pub fn get_dir(&self) -> Option<String> {
+        match &self.dir {
+            Some(dir) => Some(dir.to_owned()),
+            None => std::env::var(ENV_MIGRATION_DIR).ok(),
+        }
+    }
+
+    pub fn get_view_name(&self) -> Option<String> {
+        match &self.view_name {
+            Some(view_name) => Some(view_name.to_owned()),
+            None => std::env::var(ENV_MIGRATION_VIEW_NAME).ok(),
+        }
+    }
+
+    fn print_config(&self) {
+        println!("Dir: {}", self.get_dir().unwrap_or("NONE".to_owned()));
+        println!("View name: {}", self.get_view_name().unwrap_or("NONE".to_owned()));
+    }
+
     pub fn run(&self, args: &SlArgs) {
+        if !args.quiet {
+            self.print_config();
+        }
+        //let migration_path = MigrationPath::new_from_folder
         println!("Migrate {:?}", self.target);
+
     }
 }
