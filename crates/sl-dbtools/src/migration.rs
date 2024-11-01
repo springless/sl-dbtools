@@ -1,9 +1,14 @@
-use std::{io::{Error, ErrorKind}, path::{Path, PathBuf}};
+use std::{io::{Error, ErrorKind}, ops::Deref, path::{Path, PathBuf}};
 
-/// An individual migration that can be performed on the database
+/// Represents a specific version of the database. When a version is
+/// `Root`, that means that the database currently has no version, at all.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
-pub struct MigrationVersion {
-    version: String,
+pub enum MigrationVersion {
+    /// Represents the `0` migration, as in the state of the database before the first
+    /// migration version. Targeting this will run EVERY down migration and remove the
+    /// tracked version from the database.
+    Root,
+    Version(String),
 }
 
 impl MigrationVersion {
@@ -30,31 +35,63 @@ impl MigrationVersion {
             }
         }
         versions.sort();
-        let versions = versions.into_iter().map(|ver| MigrationVersion { version: ver }).collect();
+        let mut versions: Vec<_> = versions
+            .into_iter()
+            .map(|ver| MigrationVersion::Version(ver))
+            .collect();
+        versions.insert(0, MigrationVersion::Root);
         Ok(versions)
     }
 
-    pub fn file_name(&self, direction: MigrationDirection) -> String {
-        format!("{version}.{dir}.sql",
-            version = self.version,
-            dir = if direction == MigrationDirection::Dn {
-                "dn"
-            } else {
-                "up"
-            }
-        )
+    pub fn up_file_name(&self) -> Option<String> {
+        match &self {
+            Self::Root => None,
+            Self::Version(version_string) => {
+                Some(format!("{version}.up.sql",
+                    version = version_string,
+                ))
+            },
+        }
+    }
+
+    pub fn dn_file_name(&self) -> Option<String> {
+        match &self {
+            Self::Root => None,
+            Self::Version(version_string) => {
+                Some(format!("{version}.dn.sql",
+                    version = version_string,
+                ))
+            },
+        }
     }
 
     /// Attempts to locate the migration file. If it exists, then it will return the
     /// path to the file, and if it does not then will return None.
-    pub fn migration_file<P>(
+    pub fn up_migration_file<P>(
         &self,
-        direction: MigrationDirection,
         folder: P,
     ) -> Option<PathBuf>
     where P: AsRef<Path> {
         let folder_path = folder.as_ref();
-        let file_name = self.file_name(direction);
+        let file_name = self.up_file_name()?;
+        let full_path = folder_path.join(file_name);
+
+        if full_path.exists() {
+            Some(full_path)
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to locate the down migration file. If it exists, then it will return the
+    /// path to the file, and if it does not then will return None.
+    pub fn dn_migration_file<P>(
+        &self,
+        folder: P,
+    ) -> Option<PathBuf>
+    where P: AsRef<Path> {
+        let folder_path = folder.as_ref();
+        let file_name = self.dn_file_name()?;
         let full_path = folder_path.join(file_name);
 
         if full_path.exists() {
@@ -68,133 +105,202 @@ impl MigrationVersion {
 
 /// Represents a version being requested
 pub enum TargetVersion {
-    /// Represents the final value in the migration path
-    Head,
-    /// Represents the database at the end of the very first migration
-    First,
-    /// A version identified by name and an optional offset from that version
-    Name((String, i32)),
+    /// Represents the `0` migration, as in the state of the database before the first
+    /// migration version. Targeting this will run EVERY down migration and remove the
+    /// tracked version from the database.
+    Root(i32),
+    /// Represents the final value in the migration path plus an offset.
+    Head(i32),
+    /// Represents the current version of the database plus an offset.
+    Current(i32),
+    /// A version identified by search string and an optional offset from that version.
+    Search((String, i32)),
 }
 
-/// The direction of a migration sequence
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone)]
-pub enum MigrationDirection {
-    Up,
-    Eq,
-    Dn,
+impl TargetVersion {
+    /// Given a string, will parse it into the target version being requested. There are
+    /// three special target versions:
+    ///
+    /// 1. `HEAD` - Targets the very last migration version
+    /// 2. `@` - Targets the current migration version
+    /// 3. `ROOT` - Targets the migration version BEFORE the very first migration version, aka.
+    ///     the state of the database prior to applying any migrations, at all.
+    ///
+    /// If the version string is any other value, it will treat it like a search string, meaning
+    /// that it will target whatever migration that search string uniquely identifies in the
+    /// version list.
+    ///
+    /// In addition to the specific target, an optional offset can also be provided via `+` to
+    /// specify a version after the one specified, or `~` to specify a version before the one
+    /// specified. So `HEAD~2` targets two versions before the very last version, and `ROOT+1`
+    /// would target the first actual version in the migration path. `@+2` would target two
+    /// versions after the current version.
+    pub fn new_from_str(target: &str) -> TargetVersion {
+        let (target_ver, offset) = if let Some(pos) = target.rfind('~') {
+            let (target_ver, offset_str) = target.rsplit_once('~').unwrap();
+            let offset = 0 - offset_str.parse::<i32>().unwrap_or(0);
+            (target_ver, offset)
+        } else if let Some(pos) = target.rfind('+') {
+            let (target_ver, offset_str) = target.rsplit_once('+').unwrap();
+            let offset = offset_str.parse::<i32>().unwrap_or(0);
+            (target_ver, offset)
+        } else {
+            (target, 0)
+        };
+
+        match &target_ver {
+            &"ROOT" => TargetVersion::Root(offset),
+            &"@" => TargetVersion::Current(offset),
+            &"HEAD" => TargetVersion::Head(offset),
+            _ => TargetVersion::Search((target_ver.to_owned(), offset)),
+        }
+    }
 }
 
 /// A specific sequence of migration versions that must be stepped through in order to complete
 /// a requested migration.
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub struct MigrationPath {
-    versions: Vec<MigrationVersion>,
-    direction: MigrationDirection,
-}
-
-pub trait SearchVersion {
-    fn search_version(self: &Self, target: TargetVersion) -> Option<&MigrationVersion>;
-}
-
-impl SearchVersion for Vec<MigrationVersion> {
-    fn search_version(self: &Self, target: TargetVersion) -> Option<&MigrationVersion> {
-        match target {
-            TargetVersion::Head => self.last(),
-            TargetVersion::First => self.first(),
-            TargetVersion::Name((search_name, offset)) => {
-                let found_idx = self.iter().position(|vers| vers.version.contains(&search_name))?;
-                let offset_idx = (found_idx as isize) + (offset as isize);
-                return if offset_idx >= 0 {
-                    self.get(offset_idx as usize)
-                } else {
-                    None
-                }
-            },
-        }
-    }
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+pub enum MigrationPath {
+    Up(Vec<MigrationVersion>),
+    Eq,
+    Dn(Vec<MigrationVersion>),
 }
 
 impl MigrationPath {
-    pub fn new_from_folder<P>(
-        p: P,
-        current: Option<MigrationVersion>,
-        target: TargetVersion,
-    ) -> std::io::Result<MigrationPath>
-    where P: AsRef<Path>,
-    {
-        let mut version_path = Vec::new();
-
-        let all_versions = MigrationVersion::load_migration_folder(p)?;
-        let target_version = all_versions.search_version(target);
-
-        // Exit early if we don't have a target
-        let target_version = target_version
-            .ok_or_else(
-                || Error::new(ErrorKind::NotFound, "Cannot find requested target version")
-            )?;
-
-        let direction = match current {
-            Some(ref current_version) => {
-                if current_version < target_version {
-                    MigrationDirection::Up
-                } else if current_version > target_version {
-                    MigrationDirection::Dn
-                } else {
-                    MigrationDirection::Eq
-                }
-            },
-            None => MigrationDirection::Up,
-        };
-
-        let low = match current {
-            Some(ref current_version) => {
-                if current_version <= target_version {
-                    Some(current_version)
-                } else {
-                    Some(target_version)
-                }
-            },
-            None => None,
-        };
-        let high = match current {
-            Some(ref current_version) => {
-                if current_version <= target_version {
-                    target_version
-                } else {
-                    &current_version
-                }
-            },
-            None => target_version,
-        };
-
-        all_versions.iter().for_each(|val| {
-            match low {
-                Some(low_version) => {
-                    if val > low_version && val <= high {
-                        version_path.push(val.to_owned());
-                    }
-                },
-                None => {
-                    if val <= high {
-                        version_path.push(val.to_owned());
-                    }
-                },
-            }
-        });
-
-        if direction == MigrationDirection::Dn {
-            version_path.reverse();
+    pub fn files<P>(&self, dir: &P) -> Vec<Option<PathBuf>>
+    where P: AsRef<Path> + ?Sized {
+        match self {
+            MigrationPath::Up(path_vec) => path_vec.iter()
+                .map(|item| item.up_migration_file(dir))
+                .collect(),
+            MigrationPath::Dn(path_vec) => path_vec.iter()
+                .map(|item| item.dn_migration_file(dir))
+                .collect(),
+            MigrationPath::Eq => vec![],
         }
+    }
+}
 
-        Ok(Self { versions: version_path, direction })
+/// The current status of a database within the migration system
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub struct MigrationStatus {
+    versions: Vec<MigrationVersion>,
+    /// The current recorded version of the schema
+    current: MigrationVersion,
+    /// Position of the current version in the versions path
+    current_pos: usize,
+}
+
+trait FindVersion {
+    /// Searches for a version that matches the provided target version string. And returns
+    /// the fully specified MigrationVersion if found.
+    fn find_version(self: &Self, target: &str) -> Option<&MigrationVersion>;
+    /// Searches for a version that matches the provided target version string and returns
+    /// the position of that version.
+    fn find_version_position(self: &Self, target: &str) -> Option<usize>;
+}
+
+impl FindVersion for Vec<MigrationVersion> {
+    fn find_version_position(self: &Self, target: &str) -> Option<usize> {
+        self.iter().position(|item| {
+            match item {
+                MigrationVersion::Version(this_vers) => {
+                    target.to_lowercase().contains(&this_vers.to_lowercase())
+                },
+                _ => false,
+            }
+        })
     }
 
-    pub fn migration_files<P>(&self, folder: P) -> Vec<Option<PathBuf>>
-    where P: AsRef<Path> {
-        let folder_path = folder.as_ref();
-        self.versions.iter()
-            .map(|ver| ver.migration_file(self.direction, folder_path))
-            .collect()
+    fn find_version(self: &Self, target: &str) -> Option<&MigrationVersion> {
+        Some(&self[self.find_version_position(target)?])
+    }
+}
+
+impl MigrationStatus {
+    pub fn new_from_folder<P>(
+        p: P,
+        current: MigrationVersion,
+    ) -> std::io::Result<Self>
+    where P: AsRef<Path>,
+    {
+        let versions = MigrationVersion::load_migration_folder(p)?;
+        let current_pos = match &current {
+            MigrationVersion::Root => 0,
+            MigrationVersion::Version(version_str) => {
+                versions.iter().position(|item| {
+                    if let MigrationVersion::Version(this_ver) = item {
+                        version_str == this_ver
+                    } else {
+                        false
+                    }
+                }).unwrap_or(0)
+            },
+        };
+
+        Ok(MigrationStatus {
+            versions,
+            current,
+            current_pos,
+        })
+    }
+
+    /// Returns the position of the target version if it can be found in the version list
+    fn get_target_position(&self, target: &TargetVersion) -> Option<usize> {
+        let num_versions = self.versions.len();
+        let starting_index = match &target {
+            TargetVersion::Root(_) => 0,
+            TargetVersion::Head(_) => num_versions - 1,
+            TargetVersion::Current(_) => self.current_pos,
+            TargetVersion::Search((target_name, _)) => {
+                let search_lower = target_name.to_lowercase();
+                self.versions.iter().position(|item| {
+                    match item {
+                        MigrationVersion::Version(this_vers) => {
+                            this_vers.to_lowercase().contains(&search_lower)
+                        },
+                        _ => false,
+                    }
+                })?
+            },
+        };
+        let offset: i32 = match &target {
+            TargetVersion::Root(offset) => *offset,
+            TargetVersion::Head(offset) => *offset,
+            TargetVersion::Current(offset) => *offset,
+            TargetVersion::Search((_, offset)) => *offset,
+        };
+
+        let final_offset = (((starting_index as i32) + offset).max(0) as usize)
+            .min(num_versions - 1);
+        Some(final_offset)
+    }
+
+    /// Gets a reference to the specified target version if it can be found in the version
+    /// list.
+    pub fn get_target(&self, target: &TargetVersion) -> Option<&MigrationVersion> {
+        Some(&self.versions[self.get_target_position(target)?])
+    }
+
+    pub fn build_migration_path(&self, target: &TargetVersion) -> Option<MigrationPath> {
+        let target_pos = self.get_target_position(target)?;
+        let current_pos = self.current_pos;
+
+        if current_pos < target_pos {
+            let mut migrate_vec = vec![];
+            for n in (current_pos)..=(target_pos) {
+                migrate_vec.push(self.versions[n].clone());
+            }
+            Some(MigrationPath::Up(migrate_vec))
+        } else if current_pos > target_pos {
+            let mut migrate_vec = vec![];
+            for n in (target_pos..=current_pos).rev() {
+                migrate_vec.push(self.versions[n].clone());
+            }
+            Some(MigrationPath::Dn(migrate_vec))
+        } else {
+            Some(MigrationPath::Eq)
+        }
     }
 }
 
@@ -209,39 +315,41 @@ mod tests {
         assert_eq!(
             MigrationVersion::load_migration_folder(TEST_FOLDER).unwrap(),
             vec![
-                MigrationVersion { version: "01-create-user-table".into() },
-                MigrationVersion { version: "02-update-user-table".into() },
-                MigrationVersion { version: "03-clear-password".into() },
-                MigrationVersion { version: "04-remove-password".into() },
+                MigrationVersion::Root,
+                MigrationVersion::Version("01-create-user-table".into()),
+                MigrationVersion::Version("02-update-user-table".into()),
+                MigrationVersion::Version("03-clear-password".into()),
+                MigrationVersion::Version("04-remove-password".into()),
             ],
         );
     }
 
     #[test]
     fn test_search_version() {
+        let migration_status = MigrationStatus::new_from_folder(
+            TEST_FOLDER,
+            MigrationVersion::Version("02-update-user-table".into()),
+        )
+            .unwrap();
         // Head
         assert_eq!(
-            MigrationVersion::load_migration_folder(TEST_FOLDER)
-                .unwrap()
-                .search_version(TargetVersion::Head)
+            migration_status.get_target(&TargetVersion::Head(0))
                 .unwrap(),
-            &MigrationVersion { version: "04-remove-password".into() },
+            &MigrationVersion::Version("04-remove-password".into()),
         );
-        // First
+        // Root
         assert_eq!(
-            MigrationVersion::load_migration_folder(TEST_FOLDER)
-                .unwrap()
-                .search_version(TargetVersion::First)
+            migration_status
+                .get_target(&TargetVersion::Root(1))
                 .unwrap(),
-            &MigrationVersion { version: "01-create-user-table".into() },
+            &MigrationVersion::Version("01-create-user-table".into()),
         );
         // Name
         assert_eq!(
-            MigrationVersion::load_migration_folder(TEST_FOLDER)
-                .unwrap()
-                .search_version(TargetVersion::Name(("update-user".into(), 0)))
+            migration_status
+                .get_target(&TargetVersion::Search(("update-user".into(), 0)))
                 .unwrap(),
-            &MigrationVersion { version: "02-update-user-table".into() },
+            &MigrationVersion::Version("02-update-user-table".into()),
         );
     }
 
@@ -249,73 +357,78 @@ mod tests {
     fn test_get_migration_path() {
         // Upgrade from None
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                None,
-                TargetVersion::Head,
-            ).unwrap(),
-            MigrationPath {
-                versions: vec![
-                    MigrationVersion { version: "01-create-user-table".into() },
-                    MigrationVersion { version: "02-update-user-table".into() },
-                    MigrationVersion { version: "03-clear-password".into() },
-                    MigrationVersion { version: "04-remove-password".into() },
+                MigrationVersion::Root,
+            )
+                .unwrap()
+                .build_migration_path(&TargetVersion::Head(0))
+                .unwrap(),
+            MigrationPath::Up(
+                vec![
+                    MigrationVersion::Root,
+                    MigrationVersion::Version("01-create-user-table".into()),
+                    MigrationVersion::Version("02-update-user-table".into()),
+                    MigrationVersion::Version("03-clear-password".into()),
+                    MigrationVersion::Version("04-remove-password".into()),
                 ],
-                direction: MigrationDirection::Up,
-            }
+            ),
         );
 
         // Upgrade from a middle version
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                Some(MigrationVersion { version: "01-create-user-table".into() }),
-                TargetVersion::Name(("03-clear-password".into(), 0)),
-            ).unwrap(),
-            MigrationPath {
-                versions: vec![
-                    MigrationVersion { version: "02-update-user-table".into() },
-                    MigrationVersion { version: "03-clear-password".into() },
+                MigrationVersion::Version("02-update-user-table".into()),
+            )
+                .unwrap()
+                .build_migration_path(&TargetVersion::Search(("03-clear-password".into(), 0)))
+                .unwrap(),
+            MigrationPath::Up(
+                vec![
+                    MigrationVersion::Version("02-update-user-table".into()),
+                    MigrationVersion::Version("03-clear-password".into()),
                 ],
-                direction: MigrationDirection::Up,
-            }
+            ),
         );
 
-        // Downgrade to first
+        // Downgrade to root
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                Some(MigrationVersion { version: "04-remove-password".into() }),
-                TargetVersion::First,
-            ).unwrap(),
-            MigrationPath {
-                versions: vec![
-                    MigrationVersion { version: "04-remove-password".into() },
-                    MigrationVersion { version: "03-clear-password".into() },
-                    MigrationVersion { version: "02-update-user-table".into() },
+                MigrationVersion::Version("04-remove-password".into()),
+            )
+                .unwrap()
+                .build_migration_path(&TargetVersion::Root(0))
+                .unwrap(),
+            MigrationPath::Dn(
+                vec![
+                    MigrationVersion::Version("04-remove-password".into()),
+                    MigrationVersion::Version("03-clear-password".into()),
+                    MigrationVersion::Version("02-update-user-table".into()),
+                    MigrationVersion::Version("01-create-user-table".into()),
+                    MigrationVersion::Root,
                 ],
-                direction: MigrationDirection::Dn,
-            }
+            )
         );
 
         // Target is current
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                Some(MigrationVersion { version: "02-update-user-table".into() }),
-                TargetVersion::Name(("04-remove-password".into(), -2)),
-            ).unwrap(),
-            MigrationPath {
-                versions: vec![],
-                direction: MigrationDirection::Eq,
-            }
+                MigrationVersion::Version("02-update-user-table".into()),
+            )
+                .unwrap()
+                .build_migration_path(&TargetVersion::Search(("04-remove-password".into(), -2)))
+                .unwrap(),
+            MigrationPath::Eq,
         );
     }
 
     #[test]
     fn test_get_migration_version_file_name() {
         assert_eq!(
-            MigrationVersion { version: "01-create-user-table".into() }.file_name(MigrationDirection::Dn),
+            MigrationVersion::Version("01-create-user-table".into()).dn_file_name().unwrap(),
             "01-create-user-table.dn.sql",
         );
     }
@@ -323,14 +436,16 @@ mod tests {
     #[test]
     fn test_get_migration_path_files() {
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                None,
-                TargetVersion::Head,
+                MigrationVersion::Root,
             )
                 .unwrap()
-                .migration_files(TEST_FOLDER),
+                .build_migration_path(&TargetVersion::Head(0))
+                .unwrap()
+                .files(TEST_FOLDER),
             vec![
+                None,
                 Some("../../tests/migrations/01-create-user-table.up.sql".into()),
                 Some("../../tests/migrations/02-update-user-table.up.sql".into()),
                 Some("../../tests/migrations/03-clear-password.up.sql".into()),
@@ -339,17 +454,20 @@ mod tests {
         );
 
         assert_eq!(
-            MigrationPath::new_from_folder(
+            MigrationStatus::new_from_folder(
                 TEST_FOLDER,
-                Some(MigrationVersion { version: "04-remove-password".into() }),
-                TargetVersion::First,
+                MigrationVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
-                .migration_files(TEST_FOLDER),
+                .build_migration_path(&TargetVersion::Root(0))
+                .unwrap()
+                .files(TEST_FOLDER),
             vec![
                 Some("../../tests/migrations/04-remove-password.dn.sql".into()),
                 None,
                 Some("../../tests/migrations/02-update-user-table.dn.sql".into()),
+                Some("../../tests/migrations/01-create-user-table.dn.sql".into()),
+                None,
             ],
         );
     }
