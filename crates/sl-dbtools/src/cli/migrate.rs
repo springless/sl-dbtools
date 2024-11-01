@@ -54,6 +54,17 @@ pub struct MigrateArgs {
     /// Migrate in interactive mode (future)
     #[arg(short, long)]
     pub interactive: bool,
+
+    /// PROPOSED:
+    /// Postgres-focused flag which indicates that the migration directory is actually
+    /// comprised of multiple subdirectories, each of which handle the migrations for
+    /// that specific schema. For example, `migrationdir/public` will run migrations on
+    /// the `public` schema and `migrationdir/example` will run migrations on the
+    /// `example` schema. The migration files themselves are not treated any differently,
+    /// but if you workflow is designed around keeping each schema as a separate entity,
+    /// migrated independently, then this lets you specify which schema is being migrated.
+    #[arg(short, long)]
+    pub schema_folders: bool,
 }
 
 impl MigrateArgs {

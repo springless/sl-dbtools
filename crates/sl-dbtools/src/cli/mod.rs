@@ -49,6 +49,13 @@ pub struct SlArgs {
 
     #[command(subcommand)]
     command: SlSubcommand,
+
+    /// Typically this utility will print out some configuration information letting the
+    /// user know what the settings are. This flag will suppress that output. This flag
+    /// will NOT bypass user confirmation checks. That is handled by the `-y` flag for
+    /// each command that uses it, and must be passed separately.
+    #[arg(short, long)]
+    quiet: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
