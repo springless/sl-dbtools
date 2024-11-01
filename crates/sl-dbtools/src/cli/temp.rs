@@ -57,12 +57,25 @@ pub struct TempClean {
     pub yes: bool,
 }
 
+/// View the current temporary databases that exist on the server
+#[derive(Args, Debug, Clone)]
+pub struct TempList {
+    /// Use this if your temporary databases are created with no timestamp
+    #[arg(short = 'T', long)]
+    no_timestamp: bool,
+
+    /// Use this if you want to find temporary databases with a specific name
+    #[arg(short, long)]
+    name: Option<String>,
+}
+
 /// Manages the temporary databases created on the server. Primarily these are generated from
 /// running tests.
 #[derive(Subcommand, Debug, Clone)]
 pub enum TempCommand {
     Clean(TempClean),
     Create(TempCreate),
+    List(TempList),
 }
 
 /// Utilities for managing temporary databases
@@ -80,7 +93,10 @@ impl TempArgs {
             },
             TempCommand::Create(sub_args) => {
                 println!("Creating...");
-            }
+            },
+            TempCommand::List(sub_args) => {
+                println!("Listing...");
+            },
         }
     }
 }
