@@ -133,11 +133,11 @@ impl TargetVersion {
     /// would target the first actual version in the migration path. `@+2` would target two
     /// versions after the current version.
     pub fn new_from_str(target: &str) -> TargetVersion {
-        let (target_ver, offset) = if let Some(pos) = target.rfind('~') {
+        let (target_ver, offset) = if let Some(_) = target.rfind('~') {
             let (target_ver, offset_str) = target.rsplit_once('~').unwrap();
             let offset = 0 - offset_str.parse::<i32>().unwrap_or(0);
             (target_ver, offset)
-        } else if let Some(pos) = target.rfind('+') {
+        } else if let Some(_) = target.rfind('+') {
             let (target_ver, offset_str) = target.rsplit_once('+').unwrap();
             let offset = offset_str.parse::<i32>().unwrap_or(0);
             (target_ver, offset)
