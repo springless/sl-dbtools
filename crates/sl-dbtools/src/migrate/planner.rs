@@ -4,9 +4,7 @@ use std::{io::{Error, ErrorKind}, ops::Deref, path::{Path, PathBuf}};
 /// `Root`, that means that the database currently has no version, at all.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub enum MigrationVersion {
-    /// Represents the `0` migration, as in the state of the database before the first
-    /// migration version. Targeting this will run EVERY down migration and remove the
-    /// tracked version from the database.
+    /// Represents the state of the database before the first migration is run.
     Root,
     Version(String),
 }
@@ -104,27 +102,26 @@ impl MigrationVersion {
 
 
 /// Represents a version being requested
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub enum TargetVersion {
-    /// Represents the `0` migration, as in the state of the database before the first
-    /// migration version. Targeting this will run EVERY down migration and remove the
-    /// tracked version from the database.
+    /// Represents the state of the database before the first migration is run.
     Root(i32),
-    /// Represents the final value in the migration path plus an offset.
-    Head(i32),
     /// Represents the current version of the database plus an offset.
     Current(i32),
     /// A version identified by search string and an optional offset from that version.
     Search((String, i32)),
+    /// Represents the final value in the migration path plus an offset.
+    Head(i32),
 }
 
 impl TargetVersion {
     /// Given a string, will parse it into the target version being requested. There are
     /// three special target versions:
     ///
-    /// 1. `HEAD` - Targets the very last migration version
-    /// 2. `@` - Targets the current migration version
-    /// 3. `ROOT` - Targets the migration version BEFORE the very first migration version, aka.
+    /// 1. `ROOT` - Targets the migration version BEFORE the very first migration version, aka.
     ///     the state of the database prior to applying any migrations, at all.
+    /// 2. `HEAD` - Targets the very last migration version
+    /// 3. `@` - Targets the current migration version
     ///
     /// If the version string is any other value, it will treat it like a search string, meaning
     /// that it will target whatever migration that search string uniquely identifies in the
@@ -469,6 +466,46 @@ mod tests {
                 Some("../../tests/migrations/01-create-user-table.dn.sql".into()),
                 None,
             ],
+        );
+    }
+
+    #[test]
+    fn test_target_version_new_from_str() {
+        assert_eq!(
+            TargetVersion::new_from_str("HEAD"),
+            TargetVersion::Head(0),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("HEAD~2"),
+            TargetVersion::Head(-2),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("ROOT"),
+            TargetVersion::Root(0),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("ROOT+3"),
+            TargetVersion::Root(3),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("@"),
+            TargetVersion::Current(0),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("@+3"),
+            TargetVersion::Current(3),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("@~44"),
+            TargetVersion::Current(-44),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("find-ver"),
+            TargetVersion::Search(("find-ver".into(), 0)),
+        );
+        assert_eq!(
+            TargetVersion::new_from_str("find-ver~3"),
+            TargetVersion::Search(("find-ver".into(), -3)),
         );
     }
 }
