@@ -1,27 +1,20 @@
-use std::{io::{Error, ErrorKind}, ops::Deref, path::{Path, PathBuf}};
+use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone)]
-pub struct TargetNotFound(TargetVersion);
-
-impl std::fmt::Display for TargetNotFound {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Unable to find target: {:?}", self.0)
-    }
-}
+use crate::error::DbToolsError;
 
 /// Represents a specific version of the database. When a version is
 /// `Root`, that means that the database currently has no version, at all.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
-pub enum MigrationVersion {
+pub enum SchemaVersion {
     /// Represents the state of the database before the first migration is run.
     Root,
     Version(String),
 }
 
-impl MigrationVersion {
+impl SchemaVersion {
     /// Generates the list of migrations to apply based on the folder supplied, a target version,
     /// and the current version.
-    pub fn load_migration_folder<P>(p: P) -> std::io::Result<Vec<MigrationVersion>>
+    pub fn load_migration_folder<P>(p: P) -> std::io::Result<Vec<SchemaVersion>>
     where P: AsRef<Path> {
         let mut versions = Vec::new();
 
@@ -44,9 +37,9 @@ impl MigrationVersion {
         versions.sort();
         let mut versions: Vec<_> = versions
             .into_iter()
-            .map(|ver| MigrationVersion::Version(ver))
+            .map(|ver| SchemaVersion::Version(ver))
             .collect();
-        versions.insert(0, MigrationVersion::Root);
+        versions.insert(0, SchemaVersion::Root);
         Ok(versions)
     }
 
@@ -167,9 +160,9 @@ impl TargetVersion {
 /// a requested migration.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
 pub enum MigrationPath {
-    Up(Vec<MigrationVersion>),
+    Up(Vec<SchemaVersion>),
     Eq,
-    Dn(Vec<MigrationVersion>),
+    Dn(Vec<SchemaVersion>),
 }
 
 impl MigrationPath {
@@ -190,9 +183,7 @@ impl MigrationPath {
 /// The current status of a database within the migration system
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct MigrationPlanner {
-    versions: Vec<MigrationVersion>,
-    /// The current recorded version of the schema
-    current: MigrationVersion,
+    versions: Vec<SchemaVersion>,
     /// Position of the current version in the versions path
     current_pos: usize,
 }
@@ -200,17 +191,19 @@ pub struct MigrationPlanner {
 trait FindVersion {
     /// Searches for a version that matches the provided target version string. And returns
     /// the fully specified MigrationVersion if found.
-    fn find_version(self: &Self, target: &str) -> Option<&MigrationVersion>;
+    fn search_version(self: &Self, target: &str) -> Option<&SchemaVersion>;
     /// Searches for a version that matches the provided target version string and returns
     /// the position of that version.
-    fn find_version_position(self: &Self, target: &str) -> Option<usize>;
+    fn search_version_position(self: &Self, target: &str) -> Option<usize>;
+    /// Finds the position of an absolute version, if it exists
+    fn find_version_position(self: &Self, version: &SchemaVersion) -> Option<usize>;
 }
 
-impl FindVersion for Vec<MigrationVersion> {
-    fn find_version_position(self: &Self, target: &str) -> Option<usize> {
+impl FindVersion for Vec<SchemaVersion> {
+    fn search_version_position(self: &Self, target: &str) -> Option<usize> {
         self.iter().position(|item| {
             match item {
-                MigrationVersion::Version(this_vers) => {
+                SchemaVersion::Version(this_vers) => {
                     target.to_lowercase().contains(&this_vers.to_lowercase())
                 },
                 _ => false,
@@ -218,35 +211,28 @@ impl FindVersion for Vec<MigrationVersion> {
         })
     }
 
-    fn find_version(self: &Self, target: &str) -> Option<&MigrationVersion> {
-        Some(&self[self.find_version_position(target)?])
+    fn search_version(self: &Self, target: &str) -> Option<&SchemaVersion> {
+        Some(&self[self.search_version_position(target)?])
+    }
+
+    fn find_version_position(self: &Self, version: &SchemaVersion) -> Option<usize> {
+        self.iter().position(|item| item == version)
     }
 }
 
 impl MigrationPlanner {
     pub fn new_from_folder<P>(
         p: P,
-        current: MigrationVersion,
-    ) -> std::io::Result<Self>
+        current: SchemaVersion,
+    ) -> Result<Self, DbToolsError>
     where P: AsRef<Path>,
     {
-        let versions = MigrationVersion::load_migration_folder(p)?;
-        let current_pos = match &current {
-            MigrationVersion::Root => 0,
-            MigrationVersion::Version(version_str) => {
-                versions.iter().position(|item| {
-                    if let MigrationVersion::Version(this_ver) = item {
-                        version_str == this_ver
-                    } else {
-                        false
-                    }
-                }).unwrap_or(0)
-            },
-        };
+        let versions = SchemaVersion::load_migration_folder(p)?;
+        let current_pos = versions.find_version_position(&current)
+            .ok_or_else(|| DbToolsError::VersionDoesNotExist(current.clone()))?;
 
         Ok(MigrationPlanner {
             versions,
-            current,
             current_pos,
         })
     }
@@ -262,7 +248,7 @@ impl MigrationPlanner {
                 let search_lower = target_name.to_lowercase();
                 self.versions.iter().position(|item| {
                     match item {
-                        MigrationVersion::Version(this_vers) => {
+                        SchemaVersion::Version(this_vers) => {
                             this_vers.to_lowercase().contains(&search_lower)
                         },
                         _ => false,
@@ -284,7 +270,7 @@ impl MigrationPlanner {
 
     /// Gets a reference to the specified target version if it can be found in the version
     /// list.
-    pub fn get_target(&self, target: &TargetVersion) -> Option<&MigrationVersion> {
+    pub fn get_target(&self, target: &TargetVersion) -> Option<&SchemaVersion> {
         Some(&self.versions[self.get_target_position(target)?])
     }
 
@@ -293,7 +279,7 @@ impl MigrationPlanner {
     pub fn current_migration_path(
         &self,
         target: &TargetVersion,
-    ) -> Result<MigrationPath, TargetNotFound> {
+    ) -> Result<MigrationPath, DbToolsError> {
         self.build_migration_path(&TargetVersion::Current(0), target)
     }
 
@@ -302,11 +288,11 @@ impl MigrationPlanner {
         &self,
         start: &TargetVersion,
         end: &TargetVersion,
-    ) -> Result<MigrationPath, TargetNotFound> {
+    ) -> Result<MigrationPath, DbToolsError> {
         let start_pos = self.get_target_position(start)
-            .ok_or_else(|| TargetNotFound(start.clone()))?;
+            .ok_or_else(|| DbToolsError::TargetNotFound(start.clone()))?;
         let end_pos = self.get_target_position(end)
-            .ok_or_else(|| TargetNotFound(end.clone()))?;
+            .ok_or_else(|| DbToolsError::TargetNotFound(end.clone()))?;
 
         if start_pos < end_pos {
             let mut migrate_vec = vec![];
@@ -326,34 +312,23 @@ impl MigrationPlanner {
     }
 
     /// Fetches the current version
-    pub fn get_current(&self) -> &MigrationVersion {
-        &self.current
+    pub fn get_current(&self) -> &SchemaVersion {
+        &self.versions[self.current_pos]
     }
 
     /// Sets the current version based on an absolutely provided migration version
-    pub fn set_current(&mut self, version: MigrationVersion) {
-        let current_pos = match &version {
-            MigrationVersion::Root => 0,
-            MigrationVersion::Version(version_str) => {
-                self.versions.iter().position(|item| {
-                    if let MigrationVersion::Version(this_ver) = item {
-                        version_str == this_ver
-                    } else {
-                        false
-                    }
-                }).unwrap_or(0)
-            },
-        };
+    pub fn set_current(&mut self, version: SchemaVersion) -> Result<(), DbToolsError> {
+        let current_pos = self.versions.find_version_position(&version)
+            .ok_or_else(|| DbToolsError::VersionDoesNotExist(version.clone()))?;
         self.current_pos = current_pos;
-        self.current = version;
+        Ok(())
     }
 
     /// Sets the current version based on a target
-    pub fn set_current_target(&mut self, target: &TargetVersion) -> Result<(), TargetNotFound> {
+    pub fn set_current_target(&mut self, target: &TargetVersion) -> Result<(), DbToolsError> {
         let current_pos = self.get_target_position(target)
-            .ok_or_else(|| TargetNotFound(target.clone()))?;
+            .ok_or_else(|| DbToolsError::TargetNotFound(target.clone()))?;
         self.current_pos = current_pos;
-        self.current = self.versions[current_pos].clone();
         Ok(())
     }
 }
@@ -367,13 +342,13 @@ mod tests {
     #[test]
     fn test_get_version_files() {
         assert_eq!(
-            MigrationVersion::load_migration_folder(TEST_FOLDER).unwrap(),
+            SchemaVersion::load_migration_folder(TEST_FOLDER).unwrap(),
             vec![
-                MigrationVersion::Root,
-                MigrationVersion::Version("01-create-user-table".into()),
-                MigrationVersion::Version("02-update-user-table".into()),
-                MigrationVersion::Version("03-clear-password".into()),
-                MigrationVersion::Version("04-remove-password".into()),
+                SchemaVersion::Root,
+                SchemaVersion::Version("01-create-user-table".into()),
+                SchemaVersion::Version("02-update-user-table".into()),
+                SchemaVersion::Version("03-clear-password".into()),
+                SchemaVersion::Version("04-remove-password".into()),
             ],
         );
     }
@@ -382,28 +357,28 @@ mod tests {
     fn test_search_version() {
         let migration_status = MigrationPlanner::new_from_folder(
             TEST_FOLDER,
-            MigrationVersion::Version("02-update-user-table".into()),
+            SchemaVersion::Version("02-update-user-table".into()),
         )
             .unwrap();
         // Head
         assert_eq!(
             migration_status.get_target(&TargetVersion::Head(0))
                 .unwrap(),
-            &MigrationVersion::Version("04-remove-password".into()),
+            &SchemaVersion::Version("04-remove-password".into()),
         );
         // Root
         assert_eq!(
             migration_status
                 .get_target(&TargetVersion::Root(1))
                 .unwrap(),
-            &MigrationVersion::Version("01-create-user-table".into()),
+            &SchemaVersion::Version("01-create-user-table".into()),
         );
         // Name
         assert_eq!(
             migration_status
                 .get_target(&TargetVersion::Search(("update-user".into(), 0)))
                 .unwrap(),
-            &MigrationVersion::Version("02-update-user-table".into()),
+            &SchemaVersion::Version("02-update-user-table".into()),
         );
     }
 
@@ -413,18 +388,18 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Root,
+                SchemaVersion::Root,
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Head(0))
                 .unwrap(),
             MigrationPath::Up(
                 vec![
-                    MigrationVersion::Root,
-                    MigrationVersion::Version("01-create-user-table".into()),
-                    MigrationVersion::Version("02-update-user-table".into()),
-                    MigrationVersion::Version("03-clear-password".into()),
-                    MigrationVersion::Version("04-remove-password".into()),
+                    SchemaVersion::Root,
+                    SchemaVersion::Version("01-create-user-table".into()),
+                    SchemaVersion::Version("02-update-user-table".into()),
+                    SchemaVersion::Version("03-clear-password".into()),
+                    SchemaVersion::Version("04-remove-password".into()),
                 ],
             ),
         );
@@ -433,15 +408,15 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Version("02-update-user-table".into()),
+                SchemaVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Search(("03-clear-password".into(), 0)))
                 .unwrap(),
             MigrationPath::Up(
                 vec![
-                    MigrationVersion::Version("02-update-user-table".into()),
-                    MigrationVersion::Version("03-clear-password".into()),
+                    SchemaVersion::Version("02-update-user-table".into()),
+                    SchemaVersion::Version("03-clear-password".into()),
                 ],
             ),
         );
@@ -450,18 +425,18 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Version("04-remove-password".into()),
+                SchemaVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Root(0))
                 .unwrap(),
             MigrationPath::Dn(
                 vec![
-                    MigrationVersion::Version("04-remove-password".into()),
-                    MigrationVersion::Version("03-clear-password".into()),
-                    MigrationVersion::Version("02-update-user-table".into()),
-                    MigrationVersion::Version("01-create-user-table".into()),
-                    MigrationVersion::Root,
+                    SchemaVersion::Version("04-remove-password".into()),
+                    SchemaVersion::Version("03-clear-password".into()),
+                    SchemaVersion::Version("02-update-user-table".into()),
+                    SchemaVersion::Version("01-create-user-table".into()),
+                    SchemaVersion::Root,
                 ],
             )
         );
@@ -470,7 +445,7 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Version("02-update-user-table".into()),
+                SchemaVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Search(("04-remove-password".into(), -2)))
@@ -482,7 +457,7 @@ mod tests {
     #[test]
     fn test_get_migration_version_file_name() {
         assert_eq!(
-            MigrationVersion::Version("01-create-user-table".into()).dn_file_name().unwrap(),
+            SchemaVersion::Version("01-create-user-table".into()).dn_file_name().unwrap(),
             "01-create-user-table.dn.sql",
         );
     }
@@ -492,7 +467,7 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Root,
+                SchemaVersion::Root,
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Head(0))
@@ -510,7 +485,7 @@ mod tests {
         assert_eq!(
             MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
-                MigrationVersion::Version("04-remove-password".into()),
+                SchemaVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
                 .current_migration_path(&TargetVersion::Root(0))
