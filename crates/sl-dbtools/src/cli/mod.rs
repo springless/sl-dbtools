@@ -9,6 +9,7 @@ use crate::util::{self, pg::parse_for_maintenance};
 
 mod migrate;
 mod temp;
+mod error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -70,15 +71,16 @@ enum SlSubcommand {
 }
 
 impl SlSubcommand {
-    pub fn run(&self, args: &SlArgs) {
+    pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         match self {
             Self::Migrate(sub_args) => {
-                sub_args.run(args);
+                sub_args.run(args)?;
             },
             Self::Temp(sub_args) => {
-                sub_args.run(args);
+                sub_args.run(args)?;
             },
         }
+        Ok(())
     }
 }
 
@@ -135,7 +137,7 @@ impl SlArgs {
         println!("Admin Database: {}", self.get_admin_url().unwrap_or("NONE".to_owned()));
     }
 
-    pub fn run(&self) {
+    pub fn run(&self) -> anyhow::Result<()> {
         // attempt to read a `.env` file unless explicitly told not to
         if !self.no_env {
             if let Some(env_files) = &self.env {
@@ -149,7 +151,8 @@ impl SlArgs {
         if !self.quiet {
             self.print_config();
         }
-        let _ = &self.command.run(self);
+        let _ = &self.command.run(self)?;
+        Ok(())
     }
 }
 

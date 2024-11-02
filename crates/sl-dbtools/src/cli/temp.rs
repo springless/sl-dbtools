@@ -86,7 +86,7 @@ pub struct TempArgs {
 }
 
 impl TempArgs {
-    pub fn run(&self, args: &SlArgs) {
+    pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         match &self.command {
             TempCommand::Clean(sub_args) => {
                 println!("Cleaning...");
@@ -98,5 +98,6 @@ impl TempArgs {
                 println!("Listing...");
             },
         }
+        Ok(())
     }
 }

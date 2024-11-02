@@ -1,6 +1,8 @@
 use clap::Args;
 
-use super::SlArgs;
+use crate::migrate::planner::{MigrationPlanner, SchemaVersion, TargetVersion};
+
+use super::{SlArgs, error::CliError};
 
 /// Manages the migration status of the database, including running migrations, checking
 /// the current migration version, dry-running migrations, etc.
@@ -110,11 +112,20 @@ impl MigrateArgs {
         println!("View name: {}", self.get_view_name().unwrap_or("NONE".to_owned()));
     }
 
-    pub fn run(&self, args: &SlArgs) {
+    pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         if !args.quiet {
             self.print_config();
         }
+        let migration_dir = &self.dir.clone()
+            .ok_or(CliError::MissingArg("Provide --dir or MIGRATION_DIR".into()))?;
+        let planner = MigrationPlanner::new_from_folder(migration_dir, SchemaVersion::Root)?;
+        let path = planner.build_migration_path(&TargetVersion::Root(0), &TargetVersion::Head(0));
+        println!("{:?}", path);
+        if let None = &self.target {
+            println!("No target");
+        }
         //let migration_path = MigrationPath::new_from_folder
         println!("Migrate {:?}", self.target);
+        Ok(())
     }
 }
