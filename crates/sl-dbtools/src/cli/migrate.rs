@@ -33,18 +33,10 @@ pub struct MigrateArgs {
 
     /// The directory in which all of the migration files are held. Migrations are raw SQL
     /// files that represent an up or down migration of the schema. They should be named
-    /// according to whether they are an up or down migration, and named in such a way that
-    /// sorting them in lexicographical order puts them in the the order that they should be
-    /// run. For example:
-    ///
-    /// ```
-    /// 01-create-user-table.dn.sql <-- a down migration
-    /// 01-create-user-table.up.sql <-- an up migration
-    /// 02-update-user-table.up.sql <-- the second up migration
-    /// ```
-    ///
-    /// Down migrations should undo the changes made in an up migration, but are not strictly
-    /// necessary to include.
+    /// according to whether they are an up or down migration with the template:
+    /// `version.up.sql` or `version.dn.sql`, and also named in such a way that sorting
+    /// them in lexicographical order puts them in the the order that they should be
+    /// run.
     ///
     /// The location of the directory can also be provided in the `MIGRATION_DIR` environment
     /// variable. This flag takes precedence over the environment.
