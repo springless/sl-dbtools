@@ -183,7 +183,7 @@ impl MigrationPath {
 
 /// The current status of a database within the migration system
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub struct MigrationStatus {
+pub struct MigrationPlanner {
     versions: Vec<MigrationVersion>,
     /// The current recorded version of the schema
     current: MigrationVersion,
@@ -217,7 +217,7 @@ impl FindVersion for Vec<MigrationVersion> {
     }
 }
 
-impl MigrationStatus {
+impl MigrationPlanner {
     pub fn new_from_folder<P>(
         p: P,
         current: MigrationVersion,
@@ -238,7 +238,7 @@ impl MigrationStatus {
             },
         };
 
-        Ok(MigrationStatus {
+        Ok(MigrationPlanner {
             versions,
             current,
             current_pos,
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn test_search_version() {
-        let migration_status = MigrationStatus::new_from_folder(
+        let migration_status = MigrationPlanner::new_from_folder(
             TEST_FOLDER,
             MigrationVersion::Version("02-update-user-table".into()),
         )
@@ -357,7 +357,7 @@ mod tests {
     fn test_get_migration_path() {
         // Upgrade from None
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Root,
             )
@@ -377,7 +377,7 @@ mod tests {
 
         // Upgrade from a middle version
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Version("02-update-user-table".into()),
             )
@@ -394,7 +394,7 @@ mod tests {
 
         // Downgrade to root
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Version("04-remove-password".into()),
             )
@@ -414,7 +414,7 @@ mod tests {
 
         // Target is current
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Version("02-update-user-table".into()),
             )
@@ -436,7 +436,7 @@ mod tests {
     #[test]
     fn test_get_migration_path_files() {
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Root,
             )
@@ -454,7 +454,7 @@ mod tests {
         );
 
         assert_eq!(
-            MigrationStatus::new_from_folder(
+            MigrationPlanner::new_from_folder(
                 TEST_FOLDER,
                 MigrationVersion::Version("04-remove-password".into()),
             )
