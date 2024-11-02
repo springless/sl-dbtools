@@ -1,5 +1,14 @@
 use std::{io::{Error, ErrorKind}, ops::Deref, path::{Path, PathBuf}};
 
+#[derive(Debug, Clone)]
+pub struct TargetNotFound(TargetVersion);
+
+impl std::fmt::Display for TargetNotFound {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Unable to find target: {:?}", self.0)
+    }
+}
+
 /// Represents a specific version of the database. When a version is
 /// `Root`, that means that the database currently has no version, at all.
 #[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
@@ -279,25 +288,73 @@ impl MigrationPlanner {
         Some(&self.versions[self.get_target_position(target)?])
     }
 
-    pub fn build_migration_path(&self, target: &TargetVersion) -> Option<MigrationPath> {
-        let target_pos = self.get_target_position(target)?;
-        let current_pos = self.current_pos;
+    /// Given a target version, constructs a migration path to get from the current
+    /// position to the target position.
+    pub fn current_migration_path(
+        &self,
+        target: &TargetVersion,
+    ) -> Result<MigrationPath, TargetNotFound> {
+        self.build_migration_path(&TargetVersion::Current(0), target)
+    }
 
-        if current_pos < target_pos {
+    /// Constructs an arbitrary migration path given a start and end position.
+    pub fn build_migration_path(
+        &self,
+        start: &TargetVersion,
+        end: &TargetVersion,
+    ) -> Result<MigrationPath, TargetNotFound> {
+        let start_pos = self.get_target_position(start)
+            .ok_or_else(|| TargetNotFound(start.clone()))?;
+        let end_pos = self.get_target_position(end)
+            .ok_or_else(|| TargetNotFound(end.clone()))?;
+
+        if start_pos < end_pos {
             let mut migrate_vec = vec![];
-            for n in (current_pos)..=(target_pos) {
+            for n in (start_pos)..=(end_pos) {
                 migrate_vec.push(self.versions[n].clone());
             }
-            Some(MigrationPath::Up(migrate_vec))
-        } else if current_pos > target_pos {
+            Ok(MigrationPath::Up(migrate_vec))
+        } else if start_pos > end_pos {
             let mut migrate_vec = vec![];
-            for n in (target_pos..=current_pos).rev() {
+            for n in (end_pos..=start_pos).rev() {
                 migrate_vec.push(self.versions[n].clone());
             }
-            Some(MigrationPath::Dn(migrate_vec))
+            Ok(MigrationPath::Dn(migrate_vec))
         } else {
-            Some(MigrationPath::Eq)
+            Ok(MigrationPath::Eq)
         }
+    }
+
+    /// Fetches the current version
+    pub fn get_current(&self) -> &MigrationVersion {
+        &self.current
+    }
+
+    /// Sets the current version based on an absolutely provided migration version
+    pub fn set_current(&mut self, version: MigrationVersion) {
+        let current_pos = match &version {
+            MigrationVersion::Root => 0,
+            MigrationVersion::Version(version_str) => {
+                self.versions.iter().position(|item| {
+                    if let MigrationVersion::Version(this_ver) = item {
+                        version_str == this_ver
+                    } else {
+                        false
+                    }
+                }).unwrap_or(0)
+            },
+        };
+        self.current_pos = current_pos;
+        self.current = version;
+    }
+
+    /// Sets the current version based on a target
+    pub fn set_current_target(&mut self, target: &TargetVersion) -> Result<(), TargetNotFound> {
+        let current_pos = self.get_target_position(target)
+            .ok_or_else(|| TargetNotFound(target.clone()))?;
+        self.current_pos = current_pos;
+        self.current = self.versions[current_pos].clone();
+        Ok(())
     }
 }
 
@@ -359,7 +416,7 @@ mod tests {
                 MigrationVersion::Root,
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Head(0))
+                .current_migration_path(&TargetVersion::Head(0))
                 .unwrap(),
             MigrationPath::Up(
                 vec![
@@ -379,7 +436,7 @@ mod tests {
                 MigrationVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Search(("03-clear-password".into(), 0)))
+                .current_migration_path(&TargetVersion::Search(("03-clear-password".into(), 0)))
                 .unwrap(),
             MigrationPath::Up(
                 vec![
@@ -396,7 +453,7 @@ mod tests {
                 MigrationVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Root(0))
+                .current_migration_path(&TargetVersion::Root(0))
                 .unwrap(),
             MigrationPath::Dn(
                 vec![
@@ -416,7 +473,7 @@ mod tests {
                 MigrationVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Search(("04-remove-password".into(), -2)))
+                .current_migration_path(&TargetVersion::Search(("04-remove-password".into(), -2)))
                 .unwrap(),
             MigrationPath::Eq,
         );
@@ -438,7 +495,7 @@ mod tests {
                 MigrationVersion::Root,
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Head(0))
+                .current_migration_path(&TargetVersion::Head(0))
                 .unwrap()
                 .files(TEST_FOLDER),
             vec![
@@ -456,7 +513,7 @@ mod tests {
                 MigrationVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
-                .build_migration_path(&TargetVersion::Root(0))
+                .current_migration_path(&TargetVersion::Root(0))
                 .unwrap()
                 .files(TEST_FOLDER),
             vec![
