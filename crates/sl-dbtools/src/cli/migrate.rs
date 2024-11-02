@@ -1,7 +1,5 @@
 use clap::Args;
 
-use crate::migration::MigrationPath;
-
 use super::SlArgs;
 
 /// Manages the migration status of the database, including running migrations, checking
@@ -118,6 +116,5 @@ impl MigrateArgs {
         }
         //let migration_path = MigrationPath::new_from_folder
         println!("Migrate {:?}", self.target);
-
     }
 }
