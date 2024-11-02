@@ -118,13 +118,13 @@ impl MigrateArgs {
         }
         let migration_dir = &self.dir.clone()
             .ok_or(CliError::MissingArg("Provide --dir or MIGRATION_DIR".into()))?;
+        let db_url = args.get_url()?;
         let planner = MigrationPlanner::new_from_folder(migration_dir, SchemaVersion::Root)?;
         let path = planner.build_migration_path(&TargetVersion::Root(0), &TargetVersion::Head(0));
         println!("{:?}", path);
         if let None = &self.target {
             println!("No target");
         }
-        //let migration_path = MigrationPath::new_from_folder
         println!("Migrate {:?}", self.target);
         Ok(())
     }

@@ -16,4 +16,7 @@ pub enum DbToolsError {
     /// a migration path while targeting a version that cannot be found
     #[error("Unable to find target: {0:?}")]
     TargetNotFound(TargetVersion),
+    /// An error returned by the SQL engine
+    #[error(transparent)]
+    Sql(#[from] sqlx::Error),
 }
