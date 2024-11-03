@@ -93,10 +93,14 @@ impl SlArgs {
     /// Gets the main database URL, which will either be provided as a command line argument
     /// or pulled from the environment.
     fn get_url(&self) -> Result<String, CliError> {
-        Ok(
-            self.url.clone()
-                .ok_or(CliError::MissingArg("Provide --url or DATABASE_URL".into()))?
-        )
+        let url = if let Some(url) = &self.url {
+            url
+        } else {
+            &std::env::var(ENV_DATABASE_URL).ok().ok_or(
+                CliError::MissingArg(format!("Provide --url or {}", ENV_DATABASE_URL))
+            )?
+        };
+        Ok(url.clone())
     }
 
     fn get_db_conn_opts(&self) -> Result<PgConnectOptions, CliError> {
@@ -139,7 +143,8 @@ impl SlArgs {
                 env_files.into_iter().for_each(|fname| { dotenv::from_path(fname).ok(); });
             } else {
                 // otherwise attempt to read the standard `.env` file
-                dotenv::dotenv().ok();
+                let res = dotenv::dotenv()?;//.ok();
+                println!("{:?}", res);
             }
         }
 

@@ -112,20 +112,42 @@ impl MigrateArgs {
         println!("View name: {}", self.get_view_name().unwrap_or("NONE".to_owned()));
     }
 
+    fn get_migration_dir(&self) -> Result<String, CliError> {
+        let url = if let Some(url) = &self.dir {
+            url
+        } else {
+            &std::env::var(ENV_MIGRATION_DIR).ok().ok_or(
+                CliError::MissingArg(format!("Provide --dir or {}", ENV_MIGRATION_DIR))
+            )?
+        };
+        Ok(url.clone())
+    }
+
     pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         if !args.quiet {
             self.print_config();
         }
-        let migration_dir = &self.dir.clone()
-            .ok_or(CliError::MissingArg("Provide --dir or MIGRATION_DIR".into()))?;
-        let db_url = args.get_url()?;
+        println!("Current dir: {:?}", std::env::current_dir());
+        let migration_dir = self.get_migration_dir()?;
+        let _db_url = args.get_url()?;
         let planner = MigrationPlanner::new_from_folder(migration_dir, SchemaVersion::Root)?;
-        let path = planner.build_migration_path(&TargetVersion::Root(0), &TargetVersion::Head(0));
-        println!("{:?}", path);
-        if let None = &self.target {
-            println!("No target");
+        match &self.target {
+            None => {
+                let full_path = planner.build_migration_path(&TargetVersion::Root(0), &TargetVersion::Head(0));
+                println!("Full migration path: {:?}", full_path);
+            },
+            Some(target_str) => {
+                let target = TargetVersion::new_from_str(target_str);
+                let _found_target = planner.get_target(&target)
+                    .ok_or(
+                        CliError::InvalidArg(
+                            format!("Cannot find target \"{}\"", target_str)
+                        )
+                    )?;
+                let migration_path = planner.current_migration_path(&target)?;
+                println!("Proposed migration path: {:?}", migration_path);
+            },
         }
-        println!("Migrate {:?}", self.target);
         Ok(())
     }
 }
