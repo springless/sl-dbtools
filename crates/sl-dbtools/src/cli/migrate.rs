@@ -1,6 +1,7 @@
 use clap::Args;
+use sqlx::{Connection, PgConnection, PgPool};
 
-use crate::migrate::planner::{MigrationPlanner, SchemaVersion, TargetVersion};
+use crate::migrate::{pg::get_version, planner::{MigrationPlanner, SchemaVersion, TargetVersion}};
 
 use super::{SlArgs, error::CliError};
 
@@ -48,6 +49,9 @@ pub struct MigrateArgs {
     ///
     /// The name of this view can also be provided by the `MIGRATION_VIEW_NAME` environment
     /// variable. This flag takes precedence over the environment.
+    ///
+    /// If this value is not provided in a flag or an environment variable it defaults to
+    /// `_schema_version`
     #[arg(short, long)]
     pub view_name: Option<String>,
 
@@ -91,6 +95,7 @@ pub struct MigrateArgs {
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
 const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
+const DEFAULT_VIEW_NAME: &str = "_schema_version";
 
 impl MigrateArgs {
     pub fn get_dir(&self) -> Option<String> {
@@ -103,7 +108,10 @@ impl MigrateArgs {
     pub fn get_view_name(&self) -> Option<String> {
         match &self.view_name {
             Some(view_name) => Some(view_name.to_owned()),
-            None => std::env::var(ENV_MIGRATION_VIEW_NAME).ok(),
+            None => Some(
+                std::env::var(ENV_MIGRATION_VIEW_NAME)
+                    .unwrap_or(DEFAULT_VIEW_NAME.to_string())
+                ),
         }
     }
 
@@ -123,17 +131,25 @@ impl MigrateArgs {
         Ok(url.clone())
     }
 
-    pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
+    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         if !args.quiet {
             self.print_config();
         }
-        println!("Current dir: {:?}", std::env::current_dir());
+
+        let conn_opts = args.get_db_conn_opts()?;
+        let mut conn = PgConnection::connect_with(&conn_opts).await?;
+        let current_version = get_version(&mut conn, "_schema_version").await?;
+
         let migration_dir = self.get_migration_dir()?;
-        let _db_url = args.get_url()?;
-        let planner = MigrationPlanner::new_from_folder(migration_dir, SchemaVersion::Root)?;
+        let planner = MigrationPlanner::new_from_folder(migration_dir, current_version)?;
+
         match &self.target {
             None => {
-                let full_path = planner.build_migration_path(&TargetVersion::Root(0), &TargetVersion::Head(0));
+                let full_path = planner
+                    .build_migration_path(
+                        &TargetVersion::Root(0),
+                        &TargetVersion::Head(0),
+                    );
                 println!("Full migration path: {:?}", full_path);
             },
             Some(target_str) => {
