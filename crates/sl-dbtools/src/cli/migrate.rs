@@ -142,6 +142,7 @@ impl MigrateArgs {
             &self.get_view_name(),
         ).await?;
 
+        println!("{}", manager.get_summary_str());
         match &self.target {
             None => {
                 let full_path = manager.planner
