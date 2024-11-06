@@ -154,6 +154,33 @@ impl TargetVersion {
             _ => TargetVersion::Search((target_ver.to_owned(), offset)),
         }
     }
+
+    /// Will convert the target to the shorthand version of the target, meaning the string
+    /// representation that a user would type to use this target.
+    pub fn to_shorthand(&self) -> String {
+        let offset: i32 = match self {
+            TargetVersion::Root(offset) => *offset,
+            TargetVersion::Current(offset) => *offset,
+            TargetVersion::Search((_, offset)) => *offset,
+            TargetVersion::Head(offset) => *offset,
+        };
+        let target_str = match self {
+            TargetVersion::Root(_) => "ROOT",
+            TargetVersion::Head(_) => "HEAD",
+            TargetVersion::Current(_) => "@",
+            TargetVersion::Search((search_str, _)) => search_str,
+        };
+        if offset == 0 {
+            format!("{}", target_str)
+        } else {
+            format!(
+                "{}{}{}",
+                target_str,
+                if offset > 0 { "+" } else { "~" },
+                offset.abs(),
+            )
+        }
+    }
 }
 
 /// A specific sequence of migration versions that must be stepped through in order to complete

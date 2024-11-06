@@ -19,13 +19,14 @@ pub trait MigrationManager {
     /// Performs the specified migration. It should do this within the context of a single
     /// transaction, which rolls back if there is an error.
     #[allow(async_fn_in_trait)]
-    async fn do_migration(&mut self, target: TargetVersion) -> Result<(), DbToolsError>;
+    async fn do_next_migration(&mut self) -> Result<(), DbToolsError>;
 }
 
 pub struct PgMigrationManager {
     pub planner: MigrationPlanner,
     pub conn_opts: PgConnectOptions,
     pub view_name: String,
+    pub target: TargetVersion,
 }
 
 impl PgMigrationManager {
@@ -44,7 +45,18 @@ impl PgMigrationManager {
             planner,
             conn_opts,
             view_name: view_name.to_string(),
+            target: TargetVersion::Current(0),
         })
+    }
+
+    pub fn set_target(&mut self, target: TargetVersion) -> Result<(), DbToolsError> {
+        // make sure the target exists
+        let _found_target = self.planner.get_target(&target)
+            .ok_or(
+                DbToolsError::TargetNotFound(target.clone())
+            )?;
+        self.target = target;
+        Ok(())
     }
 }
 
@@ -59,43 +71,46 @@ impl MigrationManager for PgMigrationManager {
             // It should be impossible to fail this.
             .expect("Erroneously failed to build ROOT -> HEAD migration path");
         let current = self.planner.get_current();
-        let head = self.planner.get_target(&TargetVersion::Head(0))
-            .expect("Erroneously failed to get HEAD version");
+        let target = self.planner.get_target(&self.target)
+            .expect("Erroneously failed to find target");
 
         let mut buf = String::new();
+
+        writeln!(&mut buf, "Target: {}", self.target.to_shorthand()).unwrap();
 
         match full_path {
             MigrationPath::Up(versions) => {
                 versions.iter().for_each(|this_version| {
+                    let tgt_symbol = if this_version == target {
+                        "->"
+                    } else {
+                        "  "
+                    };
                     let at_symbol = if this_version == current {
                         "@ "
                     } else {
                         "  "
                     };
 
-                    let head_text = if this_version == head {
-                        " <-- (HEAD)"
-                    } else {
-                        ""
-                    };
                     let version_text = if let SchemaVersion::Version(version_str) = this_version {
                         &version_str
                     } else {
                         "(ROOT)"
                     };
                     writeln!(&mut buf, "{}{}{}",
+                        tgt_symbol,
                         at_symbol,
                         version_text,
-                        head_text,
                     ).unwrap();
                 })
             },
             _ => writeln!(&mut buf, "No versions available").unwrap(),
         }
+        writeln!(&mut buf, "    ^HEAD^").unwrap();
         buf
     }
 
-    async fn do_migration(&mut self, target: TargetVersion) -> Result<(), DbToolsError> {
+    async fn do_next_migration(&mut self) -> Result<(), DbToolsError> {
         Ok(())
     }
 }

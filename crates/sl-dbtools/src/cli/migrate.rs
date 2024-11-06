@@ -136,34 +136,18 @@ impl MigrateArgs {
             self.print_config();
         }
 
-        let manager = PgMigrationManager::new(
+        let mut manager = PgMigrationManager::new(
             &self.get_migration_dir()?,
             &args.get_url()?,
             &self.get_view_name(),
         ).await?;
 
-        println!("{}", manager.get_summary_str());
-        match &self.target {
-            None => {
-                let full_path = manager.planner
-                    .build_migration_path(
-                        &TargetVersion::Root(0),
-                        &TargetVersion::Head(0),
-                    );
-                println!("Full migration path: {:?}", full_path);
-            },
-            Some(target_str) => {
-                let target = TargetVersion::new_from_str(target_str);
-                let _found_target = manager.planner.get_target(&target)
-                    .ok_or(
-                        CliError::InvalidArg(
-                            format!("Cannot find target \"{}\"", target_str)
-                        )
-                    )?;
-                let migration_path = manager.planner.current_migration_path(&target)?;
-                println!("Proposed migration path: {:?}", migration_path);
-            },
+        if let Some(target_str) = &self.target {
+            let target = TargetVersion::new_from_str(target_str);
+            manager.set_target(target)?;
         }
+
+        println!("{}", manager.get_summary_str());
         Ok(())
     }
 }
