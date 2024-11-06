@@ -1,7 +1,7 @@
 use clap::Args;
 use sqlx::{Connection, PgConnection, PgPool};
 
-use crate::migrate::{pg::get_version, planner::{MigrationPlanner, SchemaVersion, TargetVersion}};
+use crate::migrate::{manager::{MigrationManager, PgMigrationManager}, pg::get_version, planner::{MigrationPlanner, SchemaVersion, TargetVersion}};
 
 use super::{SlArgs, error::CliError};
 
@@ -105,19 +105,19 @@ impl MigrateArgs {
         }
     }
 
-    pub fn get_view_name(&self) -> Option<String> {
+    pub fn get_view_name(&self) -> String {
         match &self.view_name {
-            Some(view_name) => Some(view_name.to_owned()),
-            None => Some(
+            Some(view_name) => view_name.to_owned(),
+            None => {
                 std::env::var(ENV_MIGRATION_VIEW_NAME)
                     .unwrap_or(DEFAULT_VIEW_NAME.to_string())
-                ),
+            },
         }
     }
 
     fn print_config(&self) {
         println!("Dir: {}", self.get_dir().unwrap_or("NONE".to_owned()));
-        println!("View name: {}", self.get_view_name().unwrap_or("NONE".to_owned()));
+        println!("View name: {}", self.get_view_name());
     }
 
     fn get_migration_dir(&self) -> Result<String, CliError> {
@@ -136,16 +136,15 @@ impl MigrateArgs {
             self.print_config();
         }
 
-        let conn_opts = args.get_db_conn_opts()?;
-        let mut conn = PgConnection::connect_with(&conn_opts).await?;
-        let current_version = get_version(&mut conn, "_schema_version").await?;
-
-        let migration_dir = self.get_migration_dir()?;
-        let planner = MigrationPlanner::new_from_folder(migration_dir, current_version)?;
+        let manager = PgMigrationManager::new(
+            &self.get_migration_dir()?,
+            &args.get_url()?,
+            &self.get_view_name(),
+        ).await?;
 
         match &self.target {
             None => {
-                let full_path = planner
+                let full_path = manager.planner
                     .build_migration_path(
                         &TargetVersion::Root(0),
                         &TargetVersion::Head(0),
@@ -154,13 +153,13 @@ impl MigrateArgs {
             },
             Some(target_str) => {
                 let target = TargetVersion::new_from_str(target_str);
-                let _found_target = planner.get_target(&target)
+                let _found_target = manager.planner.get_target(&target)
                     .ok_or(
                         CliError::InvalidArg(
                             format!("Cannot find target \"{}\"", target_str)
                         )
                     )?;
-                let migration_path = planner.current_migration_path(&target)?;
+                let migration_path = manager.planner.current_migration_path(&target)?;
                 println!("Proposed migration path: {:?}", migration_path);
             },
         }
