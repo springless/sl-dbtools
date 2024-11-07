@@ -1,5 +1,4 @@
-use std::{fmt::{Display, Write}, io::BufWriter, path::{Path, PathBuf}, str::FromStr};
-use chrono::ParseMonthError;
+use std::{fmt::{Display, Write}, path::{Path, PathBuf}, str::FromStr};
 use sqlx::{
     Connection,
     postgres::PgConnectOptions,
@@ -12,13 +11,10 @@ use super::{
     pg::{
         get_version,
         set_version,
-    },
-    planner::MigrationPlanner,
-    step::MigrationPath,
-    version::{
+    }, planner::MigrationPlanner, step::{MigrationPath, MigrationStep}, version::{
         SchemaVersion,
         TargetVersion,
-    },
+    }
 };
 
 pub trait MigrationManager {
@@ -31,14 +27,16 @@ pub trait MigrationManager {
     /// transaction, which rolls back if there is an error.
     #[allow(async_fn_in_trait)]
     async fn do_next_migration(&mut self) -> Result<Option<usize>, DbToolsError>;
+    /// Retrieves the next migration step to be run
+    fn get_next_step(&self) -> Option<&MigrationStep>;
 }
 
 pub struct PgMigrationManager {
     pub planner: MigrationPlanner,
     pub conn_opts: PgConnectOptions,
     pub view_name: String,
-    pub target: TargetVersion,
-    folder: PathBuf,
+    pub target_version: SchemaVersion,
+    migration_path: MigrationPath,
 }
 
 impl PgMigrationManager {
@@ -53,23 +51,34 @@ impl PgMigrationManager {
         let mut conn = PgConnection::connect_with(&conn_opts).await?;
         let current_version = get_version(&mut conn, view_name).await?;
         let planner = MigrationPlanner::new_from_folder(&folder, current_version)?;
+        let target_version = planner.get_current().clone();
+        let migration_path = vec![];
         Ok(PgMigrationManager {
             planner,
             conn_opts,
             view_name: view_name.to_string(),
-            target: TargetVersion::Current(0),
-            folder: folder.as_ref().to_owned(),
+            target_version,
+            migration_path,
         })
     }
 
     pub fn set_target(&mut self, target: TargetVersion) -> Result<(), DbToolsError> {
         // make sure the target exists
-        let _found_target = self.planner.get_target(&target)
+        let found_target = self.planner.get_target(&target)
             .ok_or(
                 DbToolsError::TargetNotFound(target.clone())
             )?;
-        self.target = target;
+        self.target_version = found_target.clone();
+        self.migration_path =
+            self.planner.current_migration_path_to_version(&self.target_version)?;
+        // we are using this path one at a time, meaning it is most efficient to pop
+        // from the end, instead of removing from the front.
+        self.migration_path.reverse();
         Ok(())
+    }
+
+    pub fn get_full_path(&self) -> &MigrationPath {
+        &self.migration_path
     }
 }
 
@@ -80,15 +89,13 @@ impl MigrationManager for PgMigrationManager {
 
     fn get_summary_str(&self) -> String {
         let current = self.planner.get_current();
-        let target = self.planner.get_target(&self.target)
-            .expect("Erroneously failed to find target");
 
         let mut buf = String::new();
 
-        writeln!(&mut buf, "Target: {}", self.target.to_shorthand()).unwrap();
+        writeln!(&mut buf, "Target: {}", self.target_version).unwrap();
 
         self.planner.versions.iter().for_each(|this_version| {
-            let tgt_symbol = if this_version == target {
+            let tgt_symbol = if this_version == &self.target_version {
                 "->"
             } else {
                 "  "
@@ -122,14 +129,13 @@ impl MigrationManager for PgMigrationManager {
     ///
     /// NOTE: Convert this to an iterator at some point.
     async fn do_next_migration(&mut self) -> Result<Option<usize>, DbToolsError> {
-        let path = self.planner.current_migration_path(&self.target)?;
-        let path_len = path.len();
+        let path_len = self.migration_path.len();
 
-        if path.is_empty() {
-            return Ok(None)
-        }
+        let next = &self.migration_path.last();
+        // we're out of steps
+        if &None == next { return Ok(None) }
+        let next = next.unwrap();
 
-        let next = &path[0];
         let raw_sql = next.action.get_raw_sql().await?;
 
         let mut conn = PgConnection::connect_with(&self.conn_opts).await?;
@@ -143,11 +149,21 @@ impl MigrationManager for PgMigrationManager {
         }
 
         // update the version stored in the database before ending the transaction
-        set_version(&mut tx, &self.view_name, &next.version);
+        set_version(&mut tx, &self.view_name, &next.version).await?;
         tx.commit().await?;
         conn.close().await?;
 
-        Ok(Some((path_len - 1).max(0)))
+        // At this point, we should be able to say confidently that the version has changed
+        // and update it inside our planner
+        self.planner.set_current(&next.version)?;
+
+        // remove the path step we just finished
+        self.migration_path.pop();
+        Ok(Some((path_len).max(0)))
+    }
+
+    fn get_next_step(&self) -> Option<&MigrationStep> {
+        self.migration_path.last()
     }
 }
 

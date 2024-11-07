@@ -2,7 +2,7 @@ use clap::Args;
 use sqlx::{Connection, PgConnection, PgPool};
 
 use crate::migrate::{
-    manager::PgMigrationManager,
+    manager::{MigrationManager, PgMigrationManager},
     pg::get_version,
     planner::MigrationPlanner,
     version::{SchemaVersion, TargetVersion}
@@ -147,12 +147,34 @@ impl MigrateArgs {
             &self.get_view_name(),
         ).await?;
 
+
         if let Some(target_str) = &self.target {
             let target = TargetVersion::new_from_str(target_str);
-            manager.set_target(target)?;
+            manager.set_target(target.clone())?;
+
+            println!("Initial state:");
+            println!("{}", manager);
+
+            if None == manager.get_next_step() {
+                println!("Already at target: {}", &target);
+                return Ok(());
+            }
+
+            while let Some(next_step) = manager.get_next_step() {
+                println!(
+                    "Migrating: {} -> {}",
+                    &manager.planner.get_current(),
+                    next_step.version,
+                );
+                manager.do_next_migration().await?;
+            }
+            println!();
+            println!("Done migrating. Final state:");
+            println!("{}", manager);
+        } else {
+            println!("{}", manager);
         }
 
-        println!("{}", manager);
         Ok(())
     }
 }

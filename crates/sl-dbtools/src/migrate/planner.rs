@@ -103,15 +103,27 @@ impl MigrationPlanner {
 
     /// Given a target version, constructs a migration path to get from the current
     /// position to the target position.
-    pub fn current_migration_path(
+    pub fn current_migration_path_to_target(
         &self,
         target: &TargetVersion,
     ) -> Result<MigrationPath, DbToolsError> {
-        self.build_migration_path(&TargetVersion::Current(0), target)
+        self.build_migration_path_from_targets(&TargetVersion::Current(0), target)
+    }
+
+    /// Given an absolute version, constructs a migration path to get from the current
+    /// position to the target position
+    pub fn current_migration_path_to_version(
+        &self,
+        version: &SchemaVersion,
+    ) -> Result<MigrationPath, DbToolsError> {
+        let start_pos = self.current_pos;
+        let end_pos = self.get_version_pos(version)
+            .ok_or_else(|| DbToolsError::VersionDoesNotExist(version.clone()))?;
+        Ok(self.build_migration_path_from_pos(start_pos, end_pos))
     }
 
     /// Constructs an arbitrary migration path given a start and end position.
-    pub fn build_migration_path(
+    pub fn build_migration_path_from_targets(
         &self,
         start: &TargetVersion,
         end: &TargetVersion,
@@ -120,7 +132,31 @@ impl MigrationPlanner {
             .ok_or_else(|| DbToolsError::TargetNotFound(start.clone()))?;
         let end_pos = self.get_target_position(end)
             .ok_or_else(|| DbToolsError::TargetNotFound(end.clone()))?;
+        Ok(self.build_migration_path_from_pos(start_pos, end_pos))
+    }
 
+    /// Constructs a migration path given two absolute versions
+    pub fn build_absolute_migration_path(
+        &self,
+        start: &SchemaVersion,
+        end: &SchemaVersion,
+    ) -> Result<MigrationPath, DbToolsError> {
+        let start_pos = self.get_version_pos(start)
+            .ok_or_else(|| DbToolsError::VersionDoesNotExist(start.clone()))?;
+        let end_pos = self.get_version_pos(end)
+            .ok_or_else(|| DbToolsError::VersionDoesNotExist(end.clone()))?;
+        Ok(self.build_migration_path_from_pos(start_pos, end_pos))
+    }
+
+    /// Retrieves the position index of the specified version, or `None` if it does not
+    /// exist.
+    fn get_version_pos (&self, version: &SchemaVersion) -> Option<usize> {
+        self.versions.iter().position(|v| v == version)
+    }
+
+    /// Struct-aware migration path builder, referencing the specific start and end
+    /// positions of the target versions
+    fn build_migration_path_from_pos(&self, start_pos: usize, end_pos: usize) -> MigrationPath {
         if start_pos < end_pos {
             let mut migrate_vec = vec![];
             for n in (start_pos+1)..=(end_pos) {
@@ -133,7 +169,7 @@ impl MigrationPlanner {
                     )
                 });
             }
-            Ok(migrate_vec)
+            migrate_vec
         } else if start_pos > end_pos {
             let mut migrate_vec = vec![];
             for n in (end_pos+1..=start_pos).rev() {
@@ -146,9 +182,9 @@ impl MigrationPlanner {
                     )
                 });
             }
-            Ok(migrate_vec)
+            migrate_vec
         } else {
-            Ok(vec![])
+            vec![]
         }
     }
 
@@ -158,7 +194,7 @@ impl MigrationPlanner {
     }
 
     /// Sets the current version based on an absolutely provided migration version
-    pub fn set_current(&mut self, version: SchemaVersion) -> Result<(), DbToolsError> {
+    pub fn set_current(&mut self, version: &SchemaVersion) -> Result<(), DbToolsError> {
         let current_pos = self.versions.find_version_position(&version)
             .ok_or_else(|| DbToolsError::VersionDoesNotExist(version.clone()))?;
         self.current_pos = current_pos;
@@ -234,7 +270,7 @@ mod tests {
                 SchemaVersion::Root,
             )
                 .unwrap()
-                .current_migration_path(&TargetVersion::Head(0))
+                .current_migration_path_to_target(&TargetVersion::Head(0))
                 .unwrap(),
             @r#"
         [
@@ -281,7 +317,7 @@ mod tests {
                 SchemaVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
-                .current_migration_path(&TargetVersion::Search(("03-clear-password".into(), 0)))
+                .current_migration_path_to_target(&TargetVersion::Search(("03-clear-password".into(), 0)))
                 .unwrap(),
             @r#"
         [
@@ -304,7 +340,7 @@ mod tests {
                 SchemaVersion::Version("04-remove-password".into()),
             )
                 .unwrap()
-                .current_migration_path(&TargetVersion::Root(0))
+                .current_migration_path_to_target(&TargetVersion::Root(0))
                 .unwrap(),
             @r#"
         [
@@ -347,7 +383,7 @@ mod tests {
                 SchemaVersion::Version("02-update-user-table".into()),
             )
                 .unwrap()
-                .current_migration_path(&TargetVersion::Search(("04-remove-password".into(), -2)))
+                .current_migration_path_to_target(&TargetVersion::Search(("04-remove-password".into(), -2)))
                 .unwrap(),
             @"[]",
         );
