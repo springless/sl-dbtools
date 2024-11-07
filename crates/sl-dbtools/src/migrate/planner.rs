@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::{fmt::Display, path::{Path, PathBuf}};
 
 use crate::error::DbToolsError;
 
@@ -9,6 +9,19 @@ pub enum SchemaVersion {
     /// Represents the state of the database before the first migration is run.
     Root,
     Version(String),
+}
+
+impl Display for SchemaVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SchemaVersion::Root => {
+                write!(f, "ROOT")
+            },
+            SchemaVersion::Version(version_str) => {
+                write!(f, "{}", version_str)
+            }
+        }
+    }
 }
 
 impl SchemaVersion {
@@ -114,6 +127,12 @@ pub enum TargetVersion {
     Search((String, i32)),
     /// Represents the final value in the migration path plus an offset.
     Head(i32),
+}
+
+impl Display for TargetVersion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.to_shorthand())
+    }
 }
 
 impl TargetVersion {
