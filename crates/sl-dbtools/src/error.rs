@@ -14,7 +14,7 @@ pub enum DbToolsError {
     VersionDoesNotExist(SchemaVersion),
     /// An error returned when a command is issued or when attempting to build
     /// a migration path while targeting a version that cannot be found
-    #[error("Unable to find target: {0:?}")]
+    #[error("Unable to find target: {}", .0.to_shorthand())]
     TargetNotFound(TargetVersion),
     /// An error returned by the SQL engine
     #[error(transparent)]
