@@ -126,9 +126,7 @@ impl TransientDb<Postgres> for PgTransientDb {
             .connect_with(self.url.clone())
             .await?;
         let raw_sql = match seed {
-            Seed::Sql(raw_sql) => {
-                raw_sql
-            },
+            Seed::Sql(raw_sql) => raw_sql,
             Seed::File(fname) => {
                 tokio::fs::read_to_string(&fname)
                     .await?

@@ -1,7 +1,12 @@
 use clap::Args;
 use sqlx::{Connection, PgConnection, PgPool};
 
-use crate::migrate::{manager::{MigrationManager, PgMigrationManager}, pg::get_version, planner::{MigrationPlanner, SchemaVersion, TargetVersion}};
+use crate::migrate::{
+    manager::PgMigrationManager,
+    pg::get_version,
+    planner::MigrationPlanner,
+    version::{SchemaVersion, TargetVersion}
+};
 
 use super::{SlArgs, error::CliError};
 

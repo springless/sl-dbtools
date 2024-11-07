@@ -1,7 +1,7 @@
 use std::io;
 use thiserror::Error;
 
-use crate::migrate::planner::{SchemaVersion, TargetVersion};
+use crate::migrate::version::{SchemaVersion, TargetVersion};
 
 #[derive(Error, Debug)]
 pub enum DbToolsError {
