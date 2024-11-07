@@ -147,7 +147,7 @@ impl MigrateArgs {
             manager.set_target(target)?;
         }
 
-        println!("{}", manager.get_summary_str());
+        println!("{}", manager);
         Ok(())
     }
 }

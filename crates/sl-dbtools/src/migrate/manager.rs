@@ -1,4 +1,4 @@
-use std::{io::BufWriter, path::Path, str::FromStr, fmt::Write};
+use std::{fmt::{Display, Write}, io::BufWriter, path::Path, str::FromStr};
 use chrono::ParseMonthError;
 use sqlx::{
     Connection,
@@ -112,5 +112,11 @@ impl MigrationManager for PgMigrationManager {
 
     async fn do_next_migration(&mut self) -> Result<(), DbToolsError> {
         Ok(())
+    }
+}
+
+impl Display for PgMigrationManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get_summary_str())
     }
 }
