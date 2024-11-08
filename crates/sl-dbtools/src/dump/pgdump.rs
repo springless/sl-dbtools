@@ -30,7 +30,6 @@ pub fn dump_db<P: AsRef<Path>>(
     };
 
     let cmd = if let Some(schemas) = schemas {
-        println!("Adding schemas");
         schemas.iter().fold(cmd, |acc, schema| {
             acc
                 .arg("--schema")
@@ -50,16 +49,16 @@ pub fn dump_db<P: AsRef<Path>>(
         let mut consecutive_blank_line = true;
         for line in reader.lines() {
             let line = line?;
-            let line = line.trim();
+            let is_blank = line.trim().is_empty();
 
             // check for any `SET` or `--` (comment) lines and skip them when outputting
             if line.starts_with("SET") || line.starts_with("--") {
                 continue;
             }
             // Remove any long blocks of blank lines in the file
-            if line.is_empty() && consecutive_blank_line {
+            if is_blank && consecutive_blank_line {
                 continue;
-            } else if line.is_empty() {
+            } else if is_blank {
                 consecutive_blank_line = true;
             } else if consecutive_blank_line {
                 consecutive_blank_line = false;
