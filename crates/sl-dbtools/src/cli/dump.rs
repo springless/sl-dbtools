@@ -13,11 +13,13 @@ pub struct DumpArgs {
     /// Include data in the dump
     #[arg(short='d', long)]
     pub with_data: bool,
+    #[arg(short='n', long)]
+    pub schema: Option<Vec<String>>,
 }
 
 impl DumpArgs {
     pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        dump_db(&args.get_url()?, &self.file, self.with_data)?;
+        dump_db(&args.get_url()?, &self.file, self.with_data, &self.schema)?;
         Ok(())
     }
 }

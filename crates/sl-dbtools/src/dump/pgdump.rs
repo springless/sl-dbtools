@@ -12,25 +12,34 @@ pub fn dump_db<P: AsRef<Path>>(
     url: &str,
     file: P,
     with_data: bool,
+    schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
-    let mut child = if !with_data {
-        Command::new("pg_dump")
+    let mut cmd = Command::new("pg_dump");
+    let cmd = cmd
         .arg(url)
-        .arg("--schema-only")
         .arg("--no-owner")
-        .arg("--no-privileges")
-        .stdout(Stdio::piped())
-        .spawn()?
+        .arg("--no-privileges");
+
+    let cmd = if with_data {
+        cmd
+            .arg("--rows-per-insert=1000")
+            .arg("--column-inserts")
     } else {
-        Command::new("pg_dump")
-        .arg(url)
-        .arg("--rows-per-insert=1000")
-        .arg("--no-owner")
-        .arg("--column-inserts")
-        .arg("--no-privileges")
-        .stdout(Stdio::piped())
-        .spawn()?
+        cmd
+            .arg("--schema-only")
     };
+
+    let cmd = if let Some(schemas) = schemas {
+        println!("Adding schemas");
+        schemas.iter().fold(cmd, |acc, schema| {
+            acc
+                .arg("--schema")
+                .arg(schema)
+        })
+    } else { cmd };
+
+    let mut child = cmd.stdout(Stdio::piped())
+        .spawn()?;
 
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
