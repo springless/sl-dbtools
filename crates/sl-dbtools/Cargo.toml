@@ -9,6 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.92"
+async-std = { version = "1.13.0", features = ["unstable"] }
 chrono = "0.4.38"
 clap = { version = "4.5.20", features = ["derive"] }
 dotenv = "0.15.0"
