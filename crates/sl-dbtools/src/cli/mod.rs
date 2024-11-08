@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
+use dump::DumpArgs;
 use error::CliError;
 use migrate::MigrateArgs;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, Postgres};
@@ -11,6 +12,7 @@ use crate::{error::DbToolsError, util::{self, pg::parse_for_maintenance}};
 mod migrate;
 mod temp;
 mod error;
+mod dump;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -69,6 +71,7 @@ pub struct SlArgs {
 enum SlSubcommand {
     Migrate(MigrateArgs),
     Temp(TempArgs),
+    Dump(DumpArgs),
 }
 
 impl SlSubcommand {
@@ -79,6 +82,9 @@ impl SlSubcommand {
             },
             Self::Temp(sub_args) => {
                 sub_args.run(args)?;
+            },
+            Self::Dump(sub_args) => {
+                sub_args.run(args).await?;
             },
         }
         Ok(())
