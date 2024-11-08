@@ -2,7 +2,7 @@ use clap::Args;
 
 use crate::dump::pgdump::dump_db;
 
-use super::{SlArgs, error::CliError};
+use super::SlArgs;
 
 #[derive(Args, Debug, Clone)]
 pub struct DumpArgs {
@@ -13,8 +13,7 @@ pub struct DumpArgs {
 
 impl DumpArgs {
     pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        dump_db(&args.get_url()?, &self.file, false)
-            .await?;
+        dump_db(&args.get_url()?, &self.file, false)?;
         Ok(())
     }
 }

@@ -7,6 +7,8 @@ use crate::migrate::version::{SchemaVersion, TargetVersion};
 pub enum DbToolsError {
     #[error(transparent)]
     Io(#[from] io::Error),
+    #[error("Process \"{}\" failed with status: {:?}", .0, .1)]
+    ProcessStatus(String, Option<i32>),
     /// An error returned when attempting to set a concrete version that does not exist, such as
     /// when setting the `current` version of a MigrationPlanner when that version does not actually
     /// exist within the plan.
