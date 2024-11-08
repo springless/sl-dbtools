@@ -59,12 +59,10 @@ pub struct SlArgs {
     #[command(subcommand)]
     command: SlSubcommand,
 
-    /// Typically this utility will print out some configuration information letting the
-    /// user know what the settings are. This flag will suppress that output. This flag
-    /// will NOT bypass user confirmation checks. That is handled by the `-y` flag for
-    /// each command that uses it, and must be passed separately.
+    /// Prints out additional information, such as configuration data, database
+    /// connection strings, etc.
     #[arg(short, long)]
-    quiet: bool,
+    verbose: bool,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -149,12 +147,11 @@ impl SlArgs {
                 env_files.into_iter().for_each(|fname| { dotenv::from_path(fname).ok(); });
             } else {
                 // otherwise attempt to read the standard `.env` file
-                let res = dotenv::dotenv()?;//.ok();
-                println!("{:?}", res);
+                let _res = dotenv::dotenv()?;//.ok();
             }
         }
 
-        if !self.quiet {
+        if self.verbose {
             self.print_config();
         }
         let _ = &self.command.run(self).await?;

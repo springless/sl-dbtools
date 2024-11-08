@@ -137,7 +137,7 @@ impl MigrateArgs {
     }
 
     pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        if !args.quiet {
+        if args.verbose {
             self.print_config();
         }
 
