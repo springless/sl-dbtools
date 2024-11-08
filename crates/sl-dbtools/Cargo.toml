@@ -3,6 +3,10 @@ name = "sl-dbtools"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "sldb"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0.92"
 chrono = "0.4.38"
@@ -15,3 +19,6 @@ thiserror = "1.0.66"
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
 url = "2.5.2"
 uuid = { version = "1.11.0", features = ["v4"] }
+
+[dev-dependencies]
+insta = { version = "1.41.1", features = ["yaml", "redactions"] }
