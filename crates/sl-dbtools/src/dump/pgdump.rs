@@ -11,9 +11,9 @@ use crate::error::DbToolsError;
 pub fn dump_db<P: AsRef<Path>>(
     url: &str,
     file: P,
-    schema_only: bool,
+    with_data: bool,
 ) -> Result<(), DbToolsError> {
-    let mut child = if schema_only {
+    let mut child = if !with_data {
         Command::new("pg_dump")
         .arg(url)
         .arg("--schema-only")
