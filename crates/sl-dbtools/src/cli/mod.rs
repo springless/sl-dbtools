@@ -147,7 +147,7 @@ impl SlArgs {
                 env_files.into_iter().for_each(|fname| { dotenv::from_path(fname).ok(); });
             } else {
                 // otherwise attempt to read the standard `.env` file
-                let _res = dotenv::dotenv()?;//.ok();
+                let _res = dotenv::dotenv().ok();
             }
         }
 
