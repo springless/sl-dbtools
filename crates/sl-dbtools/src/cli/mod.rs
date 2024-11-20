@@ -9,10 +9,18 @@ use temp::TempArgs;
 
 use crate::{error::DbToolsError, util::{self, pg::parse_for_maintenance}};
 
+//
+// Modules
+//
+
 mod migrate;
 mod temp;
 mod error;
 mod dump;
+
+//
+// /Modules
+//
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]

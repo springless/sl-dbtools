@@ -96,6 +96,34 @@ pub struct MigrateArgs {
     /// migrated independently, then this lets you specify which schema is being migrated.
     #[arg(short, long)]
     pub schema_dir: bool,
+
+    /// Changes the operation of the migration to act on a specified file or directory instead
+    /// of the current database (although the current database connection is still necessary
+    /// as the base for temporary databases that will be created to facilitate the migration).
+    /// This will read in each SQL file in the directory (or the singular SQL file specified),
+    /// run the migrations on it to the specified target, and then dump it back out on top
+    /// of the old file, replacing it. This is intended to be used in seed and fixture databases
+    /// to quickly apply migrations to test data without having to manually load and dump
+    /// those fixtures. If the `--schema-file` flag is passed, then each of the fixtures
+    /// will be assumed to **not** include a schema, and so they will be loaded and dumped
+    /// as data-only, using the provided Schema File as the base schema. At the end of the
+    /// migrations, the schema file will also be migrated and dumped per the description of
+    /// that flag. Multiple directories or files can be passed in successive `-f` flags.
+    #[arg(short, long)]
+    pub file: Option<Vec<String>>,
+
+    /// Changes the operation of the migration to act on the specified schema file instead
+    /// of the current database (although the current database connection is still necessary
+    /// as the base for a temporary database that will be created to facilitate the migration).
+    /// This will load the provided schema file into a temporary database, run the migrations
+    /// on it, and then dump it back on top of the old schema file, replacing it. This is
+    /// intended to be used to maintain a copy of the database schema in your codebase.
+    /// If this flag is provided along with `--file` flags, then the files passed in those
+    /// flags will be assumed to be data-only, and this schema will be loaded prior to each
+    /// and before running the migrations. This file will be the last thing migrated at the
+    /// end of the process. Only one schema file can be provided.
+    #[arg(short='S', long)]
+    pub schema_file: Option<String>,
 }
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
