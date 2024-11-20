@@ -73,6 +73,7 @@ dump-schema:
 	pg_dump $(MIGRATION_URL) \
 		--schema-only \
 		--no-owner \
+		--no-owner \
 		--no-privileges \
 		| $(CLEANUP_PG_DUMP) \
 		> $(SCHEMA_FILE)
@@ -81,6 +82,7 @@ dump-schema:
 dump-data-insert:
 	pg_dump $(MIGRATION_URL) \
 		--rows-per-insert=1000 \
+		--no-owner \
 		--column-inserts \
 		--data-only \
 		--quote-all-identifiers \
@@ -91,6 +93,7 @@ dump-data-insert:
 dump-data-copy:
 	pg_dump $(MIGRATION_URL) \
 		--data-only \
+		--no-owner \
 		--quote-all-identifiers \
 		| $(CLEANUP_PG_DUMP) \
 		> $(DATA_FILE)
@@ -99,6 +102,7 @@ dump-data-copy:
 dump-full-insert:
 	pg_dump $(MIGRATION_URL) \
 		--rows-per-insert=1000 \
+		--no-owner \
 		--column-inserts \
 		--quote-all-identifiers \
 		| $(CLEANUP_PG_DUMP) \
@@ -107,6 +111,7 @@ dump-full-insert:
 # Dumps a full backup that uses COPY to recreate data
 dump-full-copy:
 	pg_dump $(MIGRATION_URL) \
+		--no-owner \
 		--quote-all-identifiers \
 		| $(CLEANUP_PG_DUMP) \
 		> $(SCHEMA_DATA_FILE)
