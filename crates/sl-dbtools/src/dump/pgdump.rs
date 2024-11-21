@@ -1,17 +1,26 @@
 use std::fs::File;
 use std::path::Path;
 
-use std::io::{self, BufRead, BufReader, Lines, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 use crate::error::DbToolsError;
+
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+pub enum DumpType {
+    /// Schema and data
+    All,
+    DataOnly,
+    SchemaOnly,
+}
 
 /// Dumps the database to the specified file using `pg_dump`. This means that
 /// `pg_dump` must be installed on the system running this command.
 pub fn dump_db<P: AsRef<Path>>(
     url: &str,
     file: P,
-    with_data: bool,
+    dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
     let mut cmd = Command::new("pg_dump");
@@ -20,13 +29,20 @@ pub fn dump_db<P: AsRef<Path>>(
         .arg("--no-owner")
         .arg("--no-privileges");
 
-    let cmd = if with_data {
+    let cmd = if &DumpType::All == dump_type || &DumpType::DataOnly == dump_type {
         cmd
             .arg("--rows-per-insert=1000")
             .arg("--column-inserts")
-    } else {
+    } else { cmd };
+
+    let cmd = if &DumpType::DataOnly == dump_type {
+        cmd
+            .arg("--data-only")
+    } else if &DumpType::SchemaOnly == dump_type {
         cmd
             .arg("--schema-only")
+    } else {
+        cmd
     };
 
     let cmd = if let Some(schemas) = schemas {

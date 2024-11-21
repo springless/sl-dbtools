@@ -1,12 +1,9 @@
 use clap::Args;
 use sqlx::{Connection, PgConnection, PgPool};
 
-use crate::migrate::{
-    manager::{MigrationManager, PgMigrationManager},
-    pg::get_version,
-    planner::MigrationPlanner,
-    version::{SchemaVersion, TargetVersion}
-};
+use crate::{error::DbToolsError, migrate::{
+    file::FileMigrator, manager::{MigrationManager, PgMigrationManager}, pg::get_version, planner::MigrationPlanner, version::{SchemaVersion, TargetVersion}
+}};
 
 use super::{SlArgs, error::CliError};
 
@@ -164,11 +161,47 @@ impl MigrateArgs {
         Ok(url.clone())
     }
 
-    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        if args.verbose {
-            self.print_config();
-        }
+    /// Migration being performed on one or more files
+    async fn migrate_files(&self, args: &SlArgs) -> anyhow::Result<()> {
+        let migrate_files = if let Some(files) = &self.file {
+            files.clone()
+        } else {
+            vec![]
+        };
 
+        if let Some(target) = &self.target {
+            let target = TargetVersion::new_from_str(&target);
+            let migrator = FileMigrator {
+                base_url: args.get_db_conn_opts()?,
+                admin_url: args.get_admin_conn_opts()?,
+                migration_dir: self.get_migration_dir()?,
+                view_name: self.get_view_name(),
+            };
+
+            match &self.schema_file {
+                Some(schema_file) => {
+                    let res = migrator.migrate_files_with_schema(
+                        &target,
+                        schema_file,
+                        migrate_files,
+                    ).await?;
+                    Ok(res)
+                },
+                None => {
+                    let res = migrator.migrate_files(
+                        &target,
+                        migrate_files,
+                    ).await?;
+                    Ok(res)
+                },
+            }
+        } else {
+            Err(CliError::MissingArg("No target provided for file migration".to_owned()).into())
+        }
+    }
+
+    /// Migration being performed on the live database
+    async fn migrate_db(&self, args: &SlArgs) -> anyhow::Result<()> {
         let mut manager = PgMigrationManager::new(
             &self.get_migration_dir()?,
             &args.get_url()?,
@@ -204,5 +237,19 @@ impl MigrateArgs {
         }
 
         Ok(())
+    }
+
+    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
+        if args.verbose {
+            self.print_config();
+        }
+
+        if let Some(_) = self.schema_file {
+            self.migrate_files(args).await
+        } else if let Some(_) = self.file {
+            self.migrate_files(args).await
+        } else {
+            self.migrate_files(args).await
+        }
     }
 }

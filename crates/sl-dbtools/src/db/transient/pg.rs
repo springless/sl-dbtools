@@ -39,6 +39,25 @@ impl PgTransientDbBuilder {
             seeds: vec![],
         })
     }
+
+    pub fn new_from_conn_opts(
+        base_conn: PgConnectOptions,
+        admin_conn: Option<PgConnectOptions>,
+        initial: Initial,
+    ) -> Self {
+        let admin_opts = if let Some(admin_conn_opts) = admin_conn {
+            admin_conn_opts
+        } else {
+            base_conn.clone()
+        };
+        PgTransientDbBuilder {
+            base_url: base_conn,
+            admin_url: admin_opts,
+            name: None,
+            initial,
+            seeds: vec![],
+        }
+    }
 }
 
 impl MakeNewConnectOpts for PgConnectOptions {
