@@ -5,7 +5,7 @@ use sqlx::{
     PgConnection,
 };
 
-use crate::error::DbToolsError;
+use crate::error::{DbToolsError, SqlErrorWithContext};
 
 use super::{
     pg::{
@@ -143,9 +143,16 @@ impl MigrationManager for PgMigrationManager {
 
         // run the migration file, if it exists
         if let Some(raw_sql) = raw_sql {
-            sqlx::raw_sql(&raw_sql)
+            let res = sqlx::raw_sql(&raw_sql)
                 .execute(&mut *tx)
-                .await?;
+                .await;
+            if let Err(sqlx_err) = res {
+                return Err(DbToolsError::SqlWithContext(SqlErrorWithContext {
+                    e: sqlx_err,
+                    filename: None,
+                    query: Some(raw_sql),
+                }))
+            }
         }
 
         // update the version stored in the database before ending the transaction
