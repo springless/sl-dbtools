@@ -249,7 +249,7 @@ impl MigrateArgs {
         } else if let Some(_) = self.file {
             self.migrate_files(args).await
         } else {
-            self.migrate_files(args).await
+            self.migrate_db(args).await
         }
     }
 }
