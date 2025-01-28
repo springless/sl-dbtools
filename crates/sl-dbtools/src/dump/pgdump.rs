@@ -17,9 +17,9 @@ pub enum DumpType {
 
 /// Dumps the database to the specified file using `pg_dump`. This means that
 /// `pg_dump` must be installed on the system running this command.
-pub fn dump_db<P: AsRef<Path>>(
+pub fn dump_db<W: Write>(
     url: &str,
-    file: P,
+    writer: &mut W,
     dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
@@ -58,7 +58,6 @@ pub fn dump_db<P: AsRef<Path>>(
 
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
-        let mut outfile = File::create(file.as_ref())?;
         // This is set to true to prevent a series of blank lines in the file.
         // It starts off true to remove any blanks in the leadup to the first
         // kept line.
@@ -80,7 +79,7 @@ pub fn dump_db<P: AsRef<Path>>(
                 consecutive_blank_line = false;
             }
 
-            writeln!(outfile, "{}", line)?;
+            writeln!(writer, "{}", line)?;
         }
     }
 

@@ -1,4 +1,4 @@
-use sqlx::{postgres::PgConnectOptions, Error, ConnectOptions, Executor};
+use sqlx::{postgres::{PgConnectOptions, PgDatabaseError}, ConnectOptions, Error, Executor};
 
 /// Attempts to guess the name of the maintenance database. It is theoretically possible
 /// that a postgres server will not have `postgres` or `template1`, but this assumes that
@@ -95,5 +95,3 @@ pub async fn force_drop_database(
 
     Ok(())
 }
-
-

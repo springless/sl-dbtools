@@ -1,11 +1,13 @@
-use std::{path::{Path, PathBuf}, sync::LazyLock};
+use std::{path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
-use crate::db::transient::{
+use sqlx::postgres::PgConnectOptions;
+
+use crate::{db::transient::{
     pg::{
         PgTransientDb,
         PgTransientDbBuilder,
     }, Initial, Seed, TransientDbBuilder
-};
+}, util};
 
 /// Utility functions for managing test databases
 
@@ -36,6 +38,17 @@ impl TestEnv {
             sqlite_url:
                 std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
             seed_dir,
+        }
+    }
+
+    pub fn get_postgres_conn(&self) -> PgConnectOptions {
+        PgConnectOptions::from_str(&self.postgres_url).unwrap()
+    }
+
+    pub fn get_postgres_admin_conn(&self) -> PgConnectOptions {
+        match &self.postgres_admin_url {
+            Some(url) => PgConnectOptions::from_str(&url).unwrap(),
+            None => util::pg::parse_for_maintenance(&self.get_postgres_conn())
         }
     }
 

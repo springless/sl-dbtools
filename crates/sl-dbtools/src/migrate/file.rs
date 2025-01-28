@@ -1,6 +1,6 @@
 // File migration utilities
 
-use std::path::Path;
+use std::{fs::File, io::Write, path::Path};
 
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
@@ -35,10 +35,11 @@ impl FileMigrator {
         Ok(created_db)
     }
 
-    async fn migrate_file(
+    async fn migrate_file<W: Write>(
         &self,
         target: &TargetVersion,
         file: &Path,
+        writer: &mut W,
         schema: Option<&Path>,
         dump_type: &DumpType,
     ) -> Result<(), DbToolsError> {
@@ -71,7 +72,7 @@ impl FileMigrator {
         db_url.set_query(None);
         dump_db(
             &db_url.to_string(),
-            file,
+            writer,
             dump_type,
             &None,
         )?;
@@ -90,10 +91,12 @@ impl FileMigrator {
     ) -> Result<(), DbToolsError> {
         for f in files {
             let fname = f.as_ref();
+            let mut fwriter = File::create(fname)?;
             println!("Migrating File: {:?}", fname);
             let _ = self.migrate_file(
                 target,
                 fname,
+                &mut fwriter,
                 None,
                 &DumpType::All,
             ).await?;
@@ -118,9 +121,11 @@ impl FileMigrator {
         // for each
         for f in files {
             let fname = f.as_ref();
+            let mut fwriter = File::create(fname)?;
             let _ = self.migrate_file(
                 target,
                 fname,
+                &mut fwriter,
                 Some(schema_path),
                 &DumpType::DataOnly,
             ).await?;
@@ -141,10 +146,12 @@ impl FileMigrator {
         schema_file: P,
     ) -> Result<(), DbToolsError> {
         let fname = schema_file.as_ref();
+        let mut fwriter = File::create(fname)?;
         println!("Migrating Schema: {:?}", fname);
         let _ = self.migrate_file(
             target,
             fname,
+            &mut fwriter,
             None,
             &DumpType::SchemaOnly,
         ).await?;
@@ -153,3 +160,38 @@ impl FileMigrator {
 
 }
 
+#[cfg(test)]
+mod tests {
+    use insta::assert_debug_snapshot;
+
+    use super::*;
+    use std::io::Cursor;
+
+    use crate::test::TEST_ENV;
+
+    #[tokio::test]
+    async fn test_migrate_file() {
+        let test_file = TEST_ENV.seed_path("pg/01-mid-migrate.sql");
+        let mut buf = Cursor::new(Vec::new());
+
+        let migrator = FileMigrator {
+            base_url: TEST_ENV.get_postgres_conn(),
+            admin_url: TEST_ENV.get_postgres_admin_conn(),
+            view_name: "_schema_version".to_owned(),
+            migration_dir: "../../tests/migrations".to_owned(),
+        };
+        let res = migrator.migrate_file(
+            &TargetVersion::Current(2),
+            &test_file,
+            &mut buf,
+            None,
+            &DumpType::All
+        ).await;
+        assert!(res.is_ok(), "Received an error during file migration: {:?}", res.err());
+        let migrated_str = String::from_utf8(buf.into_inner()).unwrap();
+        assert_debug_snapshot!(
+            migrated_str,
+            @r#""SELECT pg_catalog.set_config('search_path', '', false);\n\nCREATE VIEW public._schema_version AS\n SELECT '04-remove-password'::text AS version;\n\nCREATE TABLE public.\"user\" (\n    id integer NOT NULL,\n    username text NOT NULL,\n    email text NOT NULL,\n    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,\n    first_name text\n);\n\nCREATE SEQUENCE public.user_id_seq\n    AS integer\n    START WITH 1\n    INCREMENT BY 1\n    NO MINVALUE\n    NO MAXVALUE\n    CACHE 1;\n\nALTER SEQUENCE public.user_id_seq OWNED BY public.\"user\".id;\n\nALTER TABLE ONLY public.\"user\" ALTER COLUMN id SET DEFAULT nextval('public.user_id_seq'::regclass);\n\nINSERT INTO public.\"user\" (id, username, email, created_at, first_name) VALUES\n\t(1, 'user1', 'user1@test.com', '2024-10-17 01:00:55.260444', 'User1'),\n\t(2, 'user2', 'user2@test.com', '2024-10-17 01:00:55.260444', 'User2'),\n\t(3, 'user3', 'user3@test.com', '2024-10-17 01:00:55.260444', 'User3');\n\nSELECT pg_catalog.setval('public.user_id_seq', 3, true);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_email_key UNIQUE (email);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_pkey PRIMARY KEY (id);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_username_key UNIQUE (username);\n\n""#,
+        );
+    }
+}

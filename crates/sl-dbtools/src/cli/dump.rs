@@ -1,3 +1,5 @@
+use std::fs::File;
+
 use clap::Args;
 
 use crate::dump::pgdump::{dump_db, DumpType};
@@ -24,7 +26,8 @@ impl DumpArgs {
         } else {
             DumpType::SchemaOnly
         };
-        dump_db(&args.get_url()?, &self.file, &dump_type, &self.schema)?;
+        let mut fwriter = File::create(&self.file)?;
+        dump_db(&args.get_url()?, &mut fwriter, &dump_type, &self.schema)?;
         Ok(())
     }
 }
