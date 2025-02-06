@@ -14,6 +14,7 @@ chrono = "0.4.38"
 clap = { version = "4.5.20", features = ["derive"] }
 dotenv = "0.15.0"
 insta = { version = "1.41.1", features = ["yaml", "redactions"] }
+log = "0.4.25"
 md5 = "0.7.0"
 sqlx = { version = "0.8.2", features = ["runtime-tokio", "any", "sqlite", "postgres"] }
 thiserror = "1.0.66"
