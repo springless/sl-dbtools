@@ -2,6 +2,7 @@
 
 use std::{fs::File, io::Write, path::Path};
 
+use log::info;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
 use crate::{db::transient::{pg::{PgTransientDb, PgTransientDbBuilder}, Initial, Seed, TransientDb, TransientDbBuilder}, dump::pgdump::{dump_db, DumpType}, error::DbToolsError};
@@ -91,8 +92,8 @@ impl FileMigrator {
     ) -> Result<(), DbToolsError> {
         for f in files {
             let fname = f.as_ref();
-            let mut fwriter = File::create(fname)?;
-            println!("Migrating File: {:?}", fname);
+            let mut fwriter = File::create("newfile.sql")?;
+            info!("Migrating Schema+Data File: {:?}", fname);
             let _ = self.migrate_file(
                 target,
                 fname,
@@ -122,6 +123,7 @@ impl FileMigrator {
         for f in files {
             let fname = f.as_ref();
             let mut fwriter = File::create(fname)?;
+            info!("Migrating Data File: {:?}", fname);
             let _ = self.migrate_file(
                 target,
                 fname,
@@ -147,7 +149,7 @@ impl FileMigrator {
     ) -> Result<(), DbToolsError> {
         let fname = schema_file.as_ref();
         let mut fwriter = File::create(fname)?;
-        println!("Migrating Schema: {:?}", fname);
+        info!("Migrating Schema File: {:?}", fname);
         let _ = self.migrate_file(
             target,
             fname,
@@ -157,7 +159,6 @@ impl FileMigrator {
         ).await?;
         Ok(())
     }
-
 }
 
 #[cfg(test)]

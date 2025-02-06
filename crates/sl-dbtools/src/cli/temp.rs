@@ -1,4 +1,5 @@
 use clap::{Args, Subcommand};
+use log::info;
 
 use super::SlArgs;
 
@@ -89,13 +90,13 @@ impl TempArgs {
     pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         match &self.command {
             TempCommand::Clean(sub_args) => {
-                println!("Cleaning...");
+                info!("Cleaning...");
             },
             TempCommand::Create(sub_args) => {
-                println!("Creating...");
+                info!("Creating...");
             },
             TempCommand::List(sub_args) => {
-                println!("Listing...");
+                info!("Listing...");
             },
         }
         Ok(())

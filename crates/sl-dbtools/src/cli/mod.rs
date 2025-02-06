@@ -3,6 +3,8 @@ use std::str::FromStr;
 use clap::{Parser, Subcommand};
 use dump::DumpArgs;
 use error::CliError;
+use log::{info, LevelFilter};
+use logger::SimpleLogger;
 use migrate::MigrateArgs;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, Postgres};
 use temp::TempArgs;
@@ -17,6 +19,7 @@ mod migrate;
 mod temp;
 mod error;
 mod dump;
+mod logger;
 
 //
 // /Modules
@@ -100,6 +103,8 @@ impl SlSubcommand {
 /// The name of the environment variable that holds the database url
 const ENV_DATABASE_URL: &str = "DATABASE_URL";
 const ENV_DATABASE_URL_ADMIN: &str = "DATABASE_URL_ADMIN";
+static LOGGER: SimpleLogger = SimpleLogger;
+
 
 impl SlArgs {
     /// Gets the main database URL, which will either be provided as a command line argument
@@ -143,11 +148,13 @@ impl SlArgs {
     }
 
     fn print_config(&self) {
-        println!("Main Database:  {}", self.get_url().unwrap_or("NONE".to_owned()));
-        println!("Admin Database: {}", self.get_admin_url().unwrap_or("NONE".to_owned()));
+        info!("Main Database:  {}", self.get_url().unwrap_or("NONE".to_owned()));
+        info!("Admin Database: {}", self.get_admin_url().unwrap_or("NONE".to_owned()));
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
+        log::set_logger(&LOGGER)
+            .map(|()| log::set_max_level(LevelFilter::Info));
         // attempt to read a `.env` file unless explicitly told not to
         if !self.no_env {
             if let Some(env_files) = &self.env {

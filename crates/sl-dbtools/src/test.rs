@@ -1,5 +1,6 @@
 use std::{path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 
+use log::error;
 use sqlx::postgres::PgConnectOptions;
 
 use crate::{db::transient::{
@@ -28,7 +29,7 @@ impl TestEnv {
         let seed_dir_str = std::env::var("SEED_DIR").expect("Set SEED_DIR in the environment");
         let seed_dir = Path::new(&seed_dir_str).to_owned();
         if !seed_dir.exists() {
-            eprintln!("Warning: provided SEED_DIR path does not exist: {:?}", seed_dir);
+            error!("Warning: provided SEED_DIR path does not exist: {:?}", seed_dir);
         }
         TestEnv {
             postgres_url:
