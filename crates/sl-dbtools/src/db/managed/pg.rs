@@ -5,9 +5,9 @@ use crate::{
     db::namer::{MakeNewConnectOpts, DbNamingProps, ToDbId},
     util,
 };
-use super::{TransientDb, TransientDbBuilder, Initial, Seed};
+use super::{ManagedDb, ManagedDbBuilder, Initial, Seed};
 
-pub struct PgTransientDbBuilder {
+pub struct PgManagedDbBuilder {
     base_url: PgConnectOptions,
     admin_url: PgConnectOptions,
     name: Option<String>,
@@ -15,12 +15,12 @@ pub struct PgTransientDbBuilder {
     seeds: Vec<Seed>,
 }
 
-pub struct PgTransientDb {
+pub struct PgManagedDb {
     pub url: PgConnectOptions,
     admin_url: PgConnectOptions,
 }
 
-impl PgTransientDbBuilder {
+impl PgManagedDbBuilder {
     pub fn new(
         base_url: &str,
         admin_url: Option<&str>,
@@ -31,7 +31,7 @@ impl PgTransientDbBuilder {
             Some(url) => PgConnectOptions::from_str(url)?,
             None => util::pg::parse_for_maintenance(&base_opts),
         };
-        Ok(PgTransientDbBuilder {
+        Ok(PgManagedDbBuilder {
             base_url: base_opts,
             admin_url: admin_opts,
             name: None,
@@ -50,7 +50,7 @@ impl PgTransientDbBuilder {
         } else {
             base_conn.clone()
         };
-        PgTransientDbBuilder {
+        PgManagedDbBuilder {
             base_url: base_conn,
             admin_url: admin_opts,
             name: None,
@@ -73,7 +73,7 @@ impl MakeNewConnectOpts for PgConnectOptions {
     }
 }
 
-impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
+impl ManagedDbBuilder<Postgres, PgManagedDb> for PgManagedDbBuilder {
     fn add_seed(mut self, seed: Seed) -> Self {
         self.seeds.push(seed);
         self
@@ -91,22 +91,22 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
 
     async fn build(
          self,
-    ) -> Result<PgTransientDb, sqlx::Error> {
+    ) -> Result<PgManagedDb, sqlx::Error> {
         // create database
-        let transient_conn_opts = self.base_url
+        let managed_conn_opts = self.base_url
             .make_new_connection_default(self.name.as_deref());
 
         let _db_res = match &self.initial {
             Initial::Empty => {
                 util::pg::create_owned_database(
-                    &transient_conn_opts,
+                    &managed_conn_opts,
                     &self.admin_url,
                 )
                     .await?
             },
             Initial::Template(template_url) => {
                 util::pg::create_owned_database_from_template(
-                    &transient_conn_opts,
+                    &managed_conn_opts,
                     &PgConnectOptions::from_str(&template_url)?,
                     &self.admin_url,
                 )
@@ -114,25 +114,25 @@ impl TransientDbBuilder<Postgres, PgTransientDb> for PgTransientDbBuilder {
             },
         };
 
-        let transient_db = PgTransientDb {
-            url: transient_conn_opts,
+        let managed_db = PgManagedDb {
+            url: managed_conn_opts,
             admin_url: self.admin_url.to_owned(),
         };
 
         for seed in self.seeds {
-            let _ = transient_db.seed(seed).await?;
+            let _ = managed_db.seed(seed).await?;
         }
 
-        Ok(transient_db)
+        Ok(managed_db)
     }
 
-    async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<PgTransientDb>, sqlx::Error> {
+    async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<PgManagedDb>, sqlx::Error> {
         Ok(vec![])
     }
 }
 
 
-impl TransientDb<Postgres> for PgTransientDb {
+impl ManagedDb<Postgres> for PgManagedDb {
     async fn drop(self) -> Result<(), sqlx::Error> {
         util::pg::force_drop_database(
             &self.url,

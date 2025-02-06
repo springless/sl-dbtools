@@ -5,7 +5,7 @@ use std::{fs::File, io::Write, path::Path};
 use log::info;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
-use crate::{db::transient::{pg::{PgTransientDb, PgTransientDbBuilder}, Initial, Seed, TransientDb, TransientDbBuilder}, dump::pgdump::{dump_db, DumpType}, error::DbToolsError};
+use crate::{db::managed::{pg::{PgManagedDb, PgManagedDbBuilder}, Initial, Seed, ManagedDb, ManagedDbBuilder}, dump::pgdump::{dump_db, DumpType}, error::DbToolsError};
 
 use super::{manager::{MigrationManager, PgMigrationManager}, version::TargetVersion};
 
@@ -21,8 +21,8 @@ impl FileMigrator {
         &self,
         file: &Path,
         schema: Option<&Path>,
-    ) -> Result<PgTransientDb, DbToolsError> {
-        let db_builder = PgTransientDbBuilder::new_from_conn_opts(
+    ) -> Result<PgManagedDb, DbToolsError> {
+        let db_builder = PgManagedDbBuilder::new_from_conn_opts(
             self.base_url.clone(),
             Some(self.admin_url.clone()),
             Initial::Empty,

@@ -14,23 +14,23 @@ pub enum Seed {
     File(PathBuf),
 }
 
-pub trait TransientDbBuilder<D: Database, T: TransientDb<D>> {
+pub trait ManagedDbBuilder<D: Database, T: ManagedDb<D>> {
     // Add a seed to run after creating the database. If this is called multiple times,
     // it should run multiple seeds, in the order provided.
     fn add_seed(self, seed: Seed) -> Self;
     fn set_seeds(self, seeds: Vec<Seed>) -> Self;
     /// Sets the addon name of the database
     fn set_name(self, name: String) -> Self;
-    /// Creates a new transient database with the provided options
+    /// Creates a new managed database with the provided options
     #[allow(async_fn_in_trait)]
     async fn build(self) -> Result<T, sqlx::Error>;
-    /// Returns all of the known transient databases that were spawned with the provided
-    /// `base`, and optionally `name`. Used primarily to clean up hanging transient databases.
+    /// Returns all of the known managed databases that were spawned with the provided
+    /// `base`, and optionally `name`. Used primarily to clean up hanging managed databases.
     #[allow(async_fn_in_trait)]
     async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<T>, sqlx::Error>;
 }
 
-pub trait TransientDb<D: Database> {
+pub trait ManagedDb<D: Database> {
     #[allow(async_fn_in_trait)]
     async fn drop(self) -> Result<(), sqlx::Error>;
     #[allow(async_fn_in_trait)]

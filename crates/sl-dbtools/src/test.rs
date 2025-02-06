@@ -3,11 +3,11 @@ use std::{path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
 use log::error;
 use sqlx::postgres::PgConnectOptions;
 
-use crate::{db::transient::{
+use crate::{db::managed::{
     pg::{
-        PgTransientDb,
-        PgTransientDbBuilder,
-    }, Initial, Seed, TransientDbBuilder
+        PgManagedDb,
+        PgManagedDbBuilder,
+    }, Initial, Seed, ManagedDbBuilder
 }, util};
 
 /// Utility functions for managing test databases
@@ -58,7 +58,7 @@ impl TestEnv {
         test_name: &str,
         initial: Initial,
         seeds: Vec<Seed>,
-    ) -> PgTransientDb {
+    ) -> PgManagedDb {
         // change any `File` seeds to be relative to the SEED_DIR
         let seeds = seeds.into_iter().map(|seed| {
             if let Seed::File(path) = seed {
@@ -68,17 +68,17 @@ impl TestEnv {
             }
         })
             .collect();
-        PgTransientDbBuilder::new(
+        PgManagedDbBuilder::new(
             &self.postgres_url,
             self.postgres_admin_url.as_deref(),
             initial,
         )
-            .expect("Failed to create transient db builder")
+            .expect("Failed to create managed db builder")
             .set_name(test_name.to_owned())
             .set_seeds(seeds)
             .build()
             .await
-            .expect("Failed to create transient db")
+            .expect("Failed to create managed db")
     }
 
     /// Given a `Path`, will append it to the seed path provided in the environment
