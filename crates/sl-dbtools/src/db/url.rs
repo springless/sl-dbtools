@@ -39,6 +39,10 @@ impl DbUrl {
         let path = self.path();
         path.trim_matches('/')
     }
+
+    pub fn set_dbname(&mut self, dbname: &str) {
+        self.set_path(&format!("/{}", dbname))
+    }
 }
 
 #[cfg(test)]
@@ -57,5 +61,15 @@ mod tests {
         assert_eq!(parsed_url.port(), Some(5432));
         assert_eq!(parsed_url.path(), "/dbname");
         assert_eq!(parsed_url.dbname(), "dbname");
+    }
+
+    #[test]
+    fn test_set_dburl() {
+        let mut parsed_url = DbUrl::parse("postgresql://user:pass@host:5432/dbname?queryparam=12").expect("Failed to parse URL");
+        assert_eq!(parsed_url.dbname(), "dbname");
+        parsed_url.set_dbname("new_dbname");
+        assert_eq!(parsed_url.dbname(), "new_dbname");
+        assert_eq!(parsed_url.as_str(), "postgresql://user:pass@host:5432/new_dbname?queryparam=12")
+
     }
 }
