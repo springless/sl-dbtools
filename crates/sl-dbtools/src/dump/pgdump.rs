@@ -4,6 +4,7 @@ use std::path::Path;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+use crate::db::url::DbUrl;
 use crate::error::DbToolsError;
 
 
@@ -18,14 +19,14 @@ pub enum DumpType {
 /// Dumps the database to the specified file using `pg_dump`. This means that
 /// `pg_dump` must be installed on the system running this command.
 pub fn dump_db<W: Write>(
-    url: &str,
+    url: &DbUrl,
     writer: &mut W,
     dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
     let mut cmd = Command::new("pg_dump");
     let cmd = cmd
-        .arg(url)
+        .arg(url.to_string())
         .arg("--no-owner")
         .arg("--no-privileges");
 

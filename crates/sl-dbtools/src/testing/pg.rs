@@ -1,10 +1,12 @@
 use std::path::Path;
 
-use crate::db::managed::{
-    pg::{
-        PgManagedDb,
-        PgManagedDbBuilder,
-    }, Initial, Seed, ManagedDbBuilder
+use crate::db::{
+    managed::{
+        pg::PgManagedDb,
+        Seed,
+    }, manager::pg::{
+        Initial, PgManagedDbBuilder
+    }, url::DbUrl
 };
 
 /// Convenience wrapper for a struct that can quickly create managed
@@ -51,8 +53,8 @@ use crate::db::managed::{
 /// }
 /// ```
 pub struct PgTestEnv {
-    pub base_url: String,
-    pub admin_url: Option<String>,
+    pub base_url: DbUrl,
+    pub admin_url: Option<DbUrl>,
 }
 
 impl PgTestEnv {
@@ -70,8 +72,12 @@ impl PgTestEnv {
             dotenv::from_path(path.as_ref()).ok();
         }
         PgTestEnv {
-            base_url: std::env::var("DATABASE_URL").expect("Set DATABASE_URL in the environment"),
-            admin_url: std::env::var("DATABASE_ADMIN_URL").ok(),
+            base_url: DbUrl::parse(
+                &std::env::var("DATABASE_URL").expect("Set DATABASE_URL in the environment")
+            ).expect("DATABASE_URL is invalid"),
+            admin_url: std::env::var("DATABASE_ADMIN_URL")
+                .ok()
+                .map(|url| DbUrl::parse(&url).expect("DATABASE_ADMIN_URL is provided but invalid")),
         }
     }
 
@@ -89,7 +95,7 @@ impl PgTestEnv {
     ) -> PgManagedDb {
         PgManagedDbBuilder::new(
             &self.base_url,
-            self.admin_url.as_deref(),
+            &self.admin_url,
             initial,
         )
             .expect("Failed to create managed db builder")

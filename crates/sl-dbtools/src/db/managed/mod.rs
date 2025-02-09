@@ -4,37 +4,29 @@ use sqlx::{Connection, Database};
 
 pub mod pg;
 
-pub enum Initial {
-    Empty,
-    Template(String),
-}
-
+/// A seed is used to send SQL to a database and represents the source used to get the
+/// script, for example loading from a file or directly from a string in memory.
 pub enum Seed {
     Sql(String),
     File(PathBuf),
 }
 
-pub trait ManagedDbBuilder<D: Database, T: ManagedDb<D>> {
-    // Add a seed to run after creating the database. If this is called multiple times,
-    // it should run multiple seeds, in the order provided.
-    fn add_seed(self, seed: Seed) -> Self;
-    fn set_seeds(self, seeds: Vec<Seed>) -> Self;
-    /// Sets the addon name of the database
-    fn set_name(self, name: String) -> Self;
-    /// Creates a new managed database with the provided options
-    #[allow(async_fn_in_trait)]
-    async fn build(self) -> Result<T, sqlx::Error>;
-    /// Returns all of the known managed databases that were spawned with the provided
-    /// `base`, and optionally `name`. Used primarily to clean up hanging managed databases.
-    #[allow(async_fn_in_trait)]
-    async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<T>, sqlx::Error>;
+impl Seed {
+    pub async fn raw_sql(&self) -> std::io::Result<String> {
+        Ok(match &self {
+            Seed::Sql(raw_sql) => raw_sql.to_string(),
+            Seed::File(fname) => {
+                tokio::fs::read_to_string(&fname)
+                    .await?
+            },
+        })
+    }
 }
 
 pub trait ManagedDb<D: Database> {
     #[allow(async_fn_in_trait)]
-    async fn drop(self) -> Result<(), sqlx::Error>;
-    #[allow(async_fn_in_trait)]
     async fn seed(&self, seed: Seed) -> Result<(), sqlx::Error>;
-    fn conn_opts(&self) -> &<D::Connection as Connection>::Options;
-}
 
+    #[allow(async_fn_in_trait)]
+    async fn drop(self) -> Result<(), sqlx::Error>;
+}

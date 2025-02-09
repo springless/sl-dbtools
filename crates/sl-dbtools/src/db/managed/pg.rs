@@ -1,156 +1,44 @@
-use std::{path::PathBuf, str::FromStr};
+use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Postgres};
 
-use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Connection, Database, Postgres};
-use crate::{
-    db::namer::{MakeNewConnectOpts, DbNamingProps, ToDbId},
-    util,
-};
-use super::{ManagedDb, ManagedDbBuilder, Initial, Seed};
+use crate::{db::{manager::pg::PgManagerDb, url::DbUrl}, util};
 
-pub struct PgManagedDbBuilder {
-    base_url: PgConnectOptions,
-    admin_url: PgConnectOptions,
-    name: Option<String>,
-    initial: Initial,
-    seeds: Vec<Seed>,
-}
+use super::ManagedDb;
 
 pub struct PgManagedDb {
-    pub url: PgConnectOptions,
-    admin_url: PgConnectOptions,
+    url: DbUrl,
+    conn_opts: PgConnectOptions,
+    manager: PgManagerDb,
 }
 
-impl PgManagedDbBuilder {
-    pub fn new(
-        base_url: &str,
-        admin_url: Option<&str>,
-        initial: Initial,
-    ) -> Result<Self, sqlx::Error> {
-        let base_opts = PgConnectOptions::from_str(base_url)?;
-        let admin_opts = match admin_url {
-            Some(url) => PgConnectOptions::from_str(url)?,
-            None => util::pg::parse_for_maintenance(&base_opts),
+impl PgManagedDb {
+    pub fn new(url: DbUrl, manager_url: Option<DbUrl>) -> Result<Self, sqlx::Error> {
+        let manager_url = if let Some(url) = manager_url {
+            url
+        } else {
+            url.guess_pg_maintenance_url()
         };
-        Ok(PgManagedDbBuilder {
-            base_url: base_opts,
-            admin_url: admin_opts,
-            name: None,
-            initial,
-            seeds: vec![],
+        Ok(PgManagedDb {
+            conn_opts: url.get_pg_conn_opts()?,
+            url,
+            manager: PgManagerDb::new(manager_url)?,
         })
     }
 
-    pub fn new_from_conn_opts(
-        base_conn: PgConnectOptions,
-        admin_conn: Option<PgConnectOptions>,
-        initial: Initial,
-    ) -> Self {
-        let admin_opts = if let Some(admin_conn_opts) = admin_conn {
-            admin_conn_opts
-        } else {
-            base_conn.clone()
-        };
-        PgManagedDbBuilder {
-            base_url: base_conn,
-            admin_url: admin_opts,
-            name: None,
-            initial,
-            seeds: vec![],
-        }
+    pub fn url(&self) -> &DbUrl {
+        &self.url
+    }
+
+    pub fn conn_opts(&self) -> &PgConnectOptions {
+        &self.conn_opts
     }
 }
-
-impl MakeNewConnectOpts for PgConnectOptions {
-    fn make_new_connection_default(&self, name: Option<&str>) -> Self {
-        let base = if let Some(name) = self.get_database() {
-            name
-        } else {
-            "".into()
-        };
-        let new_name = DbNamingProps::new_default(base, name)
-            .to_db_id();
-        self.clone().database(&new_name)
-    }
-}
-
-impl ManagedDbBuilder<Postgres, PgManagedDb> for PgManagedDbBuilder {
-    fn add_seed(mut self, seed: Seed) -> Self {
-        self.seeds.push(seed);
-        self
-    }
-
-    fn set_seeds(mut self, seeds: Vec<Seed>) -> Self {
-        self.seeds = seeds;
-        self
-    }
-
-    fn set_name(mut self, name: String) -> Self {
-        self.name = Some(name);
-        self
-    }
-
-    async fn build(
-         self,
-    ) -> Result<PgManagedDb, sqlx::Error> {
-        // create database
-        let managed_conn_opts = self.base_url
-            .make_new_connection_default(self.name.as_deref());
-
-        let _db_res = match &self.initial {
-            Initial::Empty => {
-                util::pg::create_owned_database(
-                    &managed_conn_opts,
-                    &self.admin_url,
-                )
-                    .await?
-            },
-            Initial::Template(template_url) => {
-                util::pg::create_owned_database_from_template(
-                    &managed_conn_opts,
-                    &PgConnectOptions::from_str(&template_url)?,
-                    &self.admin_url,
-                )
-                    .await?
-            },
-        };
-
-        let managed_db = PgManagedDb {
-            url: managed_conn_opts,
-            admin_url: self.admin_url.to_owned(),
-        };
-
-        for seed in self.seeds {
-            let _ = managed_db.seed(seed).await?;
-        }
-
-        Ok(managed_db)
-    }
-
-    async fn find_all(base: &str, name: Option<&str>) -> Result<Vec<PgManagedDb>, sqlx::Error> {
-        Ok(vec![])
-    }
-}
-
 
 impl ManagedDb<Postgres> for PgManagedDb {
-    async fn drop(self) -> Result<(), sqlx::Error> {
-        util::pg::force_drop_database(
-            &self.url,
-            &self.admin_url,
-        ).await
-    }
-
-    async fn seed(&self, seed: Seed) -> Result<(), sqlx::Error> {
+    async fn seed(&self, seed: super::Seed) -> Result<(), sqlx::Error> {
         let conn = PgPoolOptions::new()
-            .connect_with(self.url.clone())
+            .connect_with(self.conn_opts.clone())
             .await?;
-        let raw_sql = match seed {
-            Seed::Sql(raw_sql) => raw_sql,
-            Seed::File(fname) => {
-                tokio::fs::read_to_string(&fname)
-                    .await?
-            },
-        };
+        let raw_sql = seed.raw_sql().await?;
         let mut tx = conn.begin().await?;
         sqlx::raw_sql(&raw_sql)
             .execute(&mut *tx)
@@ -159,15 +47,18 @@ impl ManagedDb<Postgres> for PgManagedDb {
         Ok(())
     }
 
-    fn conn_opts(&self) -> &PgConnectOptions {
-        &self.url
+    async fn drop(self) -> Result<(), sqlx::Error> {
+        util::pg::force_drop_database(
+            &self.conn_opts(),
+            &self.manager.conn_opts(),
+        ).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test::TEST_ENV;
+    use crate::{db::{managed::Seed, manager::pg::Initial}, test::TEST_ENV};
     use sqlx::{
         Row,
         ConnectOptions,
@@ -181,7 +72,7 @@ mod tests {
             vec![],
         ).await;
         let conn = PgPoolOptions::new()
-            .connect_with(testdb.url.clone())
+            .connect_with(testdb.url().get_pg_conn_opts().unwrap())
             .await;
         assert!(matches!(conn, Ok(_)));
         let drop = testdb.drop().await;
@@ -198,7 +89,7 @@ mod tests {
             ],
         ).await;
         let conn = PgPoolOptions::new()
-            .connect_with(testdb.url.clone())
+            .connect_with(testdb.url().get_pg_conn_opts().unwrap())
             .await
             .unwrap();
         let row = sqlx::query("SELECT username FROM \"user\" ORDER BY username ASC")
@@ -233,7 +124,7 @@ mod tests {
         ).await;
 
         let conn = PgPoolOptions::new()
-            .connect_with(testdb.url.clone())
+            .connect_with(testdb.url().get_pg_conn_opts().unwrap())
             .await
             .unwrap();
         let row = sqlx::query("SELECT value FROM my_table ORDER BY value ASC")
@@ -268,12 +159,12 @@ mod tests {
         ).await;
         let created_testdb = TEST_ENV.new_pg_db(
             "test_db_create_template_created",
-            Initial::Template(template_testdb.url.to_url_lossy().to_string()),
+            Initial::Template(template_testdb.url().clone()),
             vec![],
         ).await;
 
         let conn = PgPoolOptions::new()
-            .connect_with(created_testdb.url.clone())
+            .connect_with(created_testdb.url().get_pg_conn_opts().unwrap())
             .await
             .unwrap();
         let row = sqlx::query("SELECT value FROM my_table ORDER BY value ASC")

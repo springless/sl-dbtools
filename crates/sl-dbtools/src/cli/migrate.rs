@@ -174,8 +174,8 @@ impl MigrateArgs {
         if let Some(target) = &self.target {
             let target = TargetVersion::new_from_str(&target);
             let migrator = FileMigrator {
-                base_url: args.get_db_conn_opts()?,
-                admin_url: args.get_admin_conn_opts()?,
+                base_url: args.get_url()?,
+                admin_url: args.get_admin_url()?,
                 migration_dir: self.get_migration_dir()?,
                 view_name: self.get_view_name(),
             };
@@ -206,7 +206,7 @@ impl MigrateArgs {
     async fn migrate_db(&self, args: &SlArgs) -> anyhow::Result<()> {
         let mut manager = PgMigrationManager::new(
             &self.get_migration_dir()?,
-            &args.get_url()?,
+            args.get_url()?,
             &self.get_view_name(),
         ).await?;
 

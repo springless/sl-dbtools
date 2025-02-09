@@ -1,17 +1,30 @@
 // File migration utilities
 
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, ops::Deref, path::Path};
 
 use log::info;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
-use crate::{db::managed::{pg::{PgManagedDb, PgManagedDbBuilder}, Initial, Seed, ManagedDb, ManagedDbBuilder}, dump::pgdump::{dump_db, DumpType}, error::DbToolsError};
+use crate::{
+    db::{
+        managed::{
+            pg::PgManagedDb, ManagedDb, Seed
+        }, manager::pg::{
+            Initial, PgManagedDbBuilder
+        }, url::DbUrl
+    },
+    dump::pgdump::{
+        dump_db,
+        DumpType
+    },
+    error::DbToolsError
+};
 
 use super::{manager::{MigrationManager, PgMigrationManager}, version::TargetVersion};
 
 pub struct FileMigrator {
-    pub base_url: PgConnectOptions,
-    pub admin_url: PgConnectOptions,
+    pub base_url: DbUrl,
+    pub admin_url: DbUrl,
     pub migration_dir: String,
     pub view_name: String,
 }
@@ -22,11 +35,11 @@ impl FileMigrator {
         file: &Path,
         schema: Option<&Path>,
     ) -> Result<PgManagedDb, DbToolsError> {
-        let db_builder = PgManagedDbBuilder::new_from_conn_opts(
-            self.base_url.clone(),
-            Some(self.admin_url.clone()),
+        let db_builder = PgManagedDbBuilder::new(
+            &self.base_url,
+            &Some(self.admin_url.clone()),
             Initial::Empty,
-        );
+        )?;
         let db_builder = if let Some(schema_file) = schema {
             db_builder.add_seed(Seed::File(schema_file.to_path_buf()))
         } else { db_builder };
@@ -48,7 +61,7 @@ impl FileMigrator {
 
         let manager = PgMigrationManager::new(
             self.migration_dir.clone(),
-            &temp_db.url.to_url_lossy().to_string(),
+            temp_db.url().clone(),
             &self.view_name,
         ).await;
 
@@ -69,10 +82,8 @@ impl FileMigrator {
             manager.do_next_migration().await?;
         }
 
-        let mut db_url = temp_db.url.to_url_lossy();
-        db_url.set_query(None);
         dump_db(
-            &db_url.to_string(),
+            &temp_db.url(),
             writer,
             dump_type,
             &None,
@@ -176,8 +187,8 @@ mod tests {
         let mut buf = Cursor::new(Vec::new());
 
         let migrator = FileMigrator {
-            base_url: TEST_ENV.get_postgres_conn(),
-            admin_url: TEST_ENV.get_postgres_admin_conn(),
+            base_url: TEST_ENV.get_postgres_url().clone(),
+            admin_url: TEST_ENV.get_postgres_admin_url(),
             view_name: "_schema_version".to_owned(),
             migration_dir: "../../tests/migrations".to_owned(),
         };

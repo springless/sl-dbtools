@@ -9,7 +9,7 @@ use migrate::MigrateArgs;
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, Postgres};
 use temp::TempArgs;
 
-use crate::{error::DbToolsError, util::{self, pg::parse_for_maintenance}};
+use crate::{db::url::DbUrl, error::DbToolsError, util::{self, pg::parse_for_maintenance}};
 
 //
 // Modules
@@ -109,7 +109,7 @@ static LOGGER: SimpleLogger = SimpleLogger;
 impl SlArgs {
     /// Gets the main database URL, which will either be provided as a command line argument
     /// or pulled from the environment.
-    fn get_url(&self) -> Result<String, CliError> {
+    fn get_url(&self) -> Result<DbUrl, CliError> {
         let url = if let Some(url) = &self.url {
             url
         } else {
@@ -117,16 +117,19 @@ impl SlArgs {
                 CliError::MissingArg(format!("Provide --url or {}", ENV_DATABASE_URL))
             )?
         };
-        Ok(url.clone())
+        let url = DbUrl::parse(url).ok().ok_or(
+            CliError::InvalidArg(format!("Failed to parse url: {}", url))
+        )?;
+        Ok(url)
     }
 
     fn get_db_conn_opts(&self) -> Result<PgConnectOptions, CliError> {
         let url = self.get_url()?;
-        let conn_opts = PgConnectOptions::from_str(&url).map_err(DbToolsError::from)?;
+        let conn_opts = url.get_pg_conn_opts().map_err(DbToolsError::from)?;
         Ok(conn_opts)
     }
 
-    fn get_admin_url(&self) -> Result<String, CliError> {
+    fn get_admin_url(&self) -> Result<DbUrl, CliError> {
         let admin_url = if let Some(admin_url) = &self.admin_url {
             admin_url.to_owned()
         } else {
@@ -138,18 +141,26 @@ impl SlArgs {
                 },
             }
         };
+        let admin_url = DbUrl::parse(&admin_url).ok().ok_or(
+            CliError::InvalidArg(format!("Failed to parse admin url: {}", admin_url))
+        )?;
         Ok(admin_url)
     }
 
     fn get_admin_conn_opts(&self) -> Result<PgConnectOptions, CliError> {
-        PgConnectOptions::from_str(&self.get_admin_url()?)
+        self.get_admin_url()?
+            .get_pg_conn_opts()
             .map_err(DbToolsError::from)
             .map_err(CliError::from)
     }
 
     fn print_config(&self) {
-        info!("Main Database:  {}", self.get_url().unwrap_or("NONE".to_owned()));
-        info!("Admin Database: {}", self.get_admin_url().unwrap_or("NONE".to_owned()));
+        info!("Main Database:  {}", self.get_url()
+            .map(|url| url.to_string())
+            .unwrap_or("NONE".to_owned()));
+        info!("Admin Database: {}", self.get_admin_url()
+            .map(|url| url.to_string())
+            .unwrap_or("NONE".to_owned()));
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {

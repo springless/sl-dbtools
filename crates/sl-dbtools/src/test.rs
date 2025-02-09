@@ -1,14 +1,16 @@
-use std::{path::{Path, PathBuf}, str::FromStr, sync::LazyLock};
+use std::{path::{Path, PathBuf}, sync::LazyLock};
 
 use log::error;
 use sqlx::postgres::PgConnectOptions;
 
-use crate::{db::managed::{
-    pg::{
-        PgManagedDb,
-        PgManagedDbBuilder,
-    }, Initial, Seed, ManagedDbBuilder
-}, util};
+use crate::db::{
+    managed::{
+        pg::PgManagedDb,
+        Seed,
+    }, manager::pg::{
+        Initial, PgManagedDbBuilder
+    }, url::DbUrl
+};
 
 /// Utility functions for managing test databases
 
@@ -17,9 +19,9 @@ pub fn setup_env() {
 }
 
 pub struct TestEnv {
-    pub postgres_url: String,
-    postgres_admin_url: Option<String>,
-    pub sqlite_url: String,
+    pub postgres_url: DbUrl,
+    postgres_admin_url: Option<DbUrl>,
+    pub sqlite_url: DbUrl,
     seed_dir: PathBuf,
 }
 
@@ -33,23 +35,40 @@ impl TestEnv {
         }
         TestEnv {
             postgres_url:
-                std::env::var("POSTGRES_URL").expect("Set POSTGRES_URL in the environment"),
+            DbUrl::parse(
+                &std::env::var("POSTGRES_URL").expect("Set POSTGRES_URL in the environment")
+            ).expect("POSTGRES_URL is invalid"),
             postgres_admin_url:
-                std::env::var("POSTGRES_ADMIN_URL").ok(),
+            if let Ok(admin_url) = std::env::var("POSTGRES_ADMIN_URL") {
+                Some(DbUrl::parse(&admin_url).expect("POSTGRES_ADMIN_URL is invalid"))
+            } else { None },
             sqlite_url:
-                std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
+            DbUrl::parse(
+                &std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
+            ).expect("SQLITE_URL is invalid"),
             seed_dir,
         }
     }
 
     pub fn get_postgres_conn(&self) -> PgConnectOptions {
-        PgConnectOptions::from_str(&self.postgres_url).unwrap()
+        self.postgres_url.get_pg_conn_opts().unwrap()
+    }
+
+    pub fn get_postgres_url(&self) -> &DbUrl {
+        &self.postgres_url
     }
 
     pub fn get_postgres_admin_conn(&self) -> PgConnectOptions {
         match &self.postgres_admin_url {
-            Some(url) => PgConnectOptions::from_str(&url).unwrap(),
-            None => util::pg::parse_for_maintenance(&self.get_postgres_conn())
+            Some(url) => url.get_pg_conn_opts().unwrap(),
+            None => self.postgres_url.guess_pg_maintenance_url().get_pg_conn_opts().unwrap(),
+        }
+    }
+
+    pub fn get_postgres_admin_url(&self) -> DbUrl {
+        match &self.postgres_admin_url {
+            Some(url) => url.clone(),
+            None => self.postgres_url.guess_pg_maintenance_url(),
         }
     }
 
@@ -70,7 +89,7 @@ impl TestEnv {
             .collect();
         PgManagedDbBuilder::new(
             &self.postgres_url,
-            self.postgres_admin_url.as_deref(),
+            &self.postgres_admin_url,
             initial,
         )
             .expect("Failed to create managed db builder")
@@ -100,8 +119,8 @@ mod tests {
     fn test_test_env() {
         let pg_url = &TEST_ENV.postgres_url;
         assert_eq!(
-            pg_url,
-            &std::env::var("POSTGRES_URL").unwrap(),
+            pg_url.to_string(),
+            std::env::var("POSTGRES_URL").unwrap(),
         );
     }
 
