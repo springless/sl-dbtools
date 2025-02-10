@@ -1,6 +1,8 @@
+use std::fs::File;
+
 use clap::Args;
 
-use crate::dump::pgdump::dump_db;
+use crate::dump::pgdump::{dump_db, DumpType};
 
 use super::SlArgs;
 
@@ -19,7 +21,13 @@ pub struct DumpArgs {
 
 impl DumpArgs {
     pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        dump_db(&args.get_url()?, &self.file, self.with_data, &self.schema)?;
+        let dump_type = if self.with_data {
+            DumpType::All
+        } else {
+            DumpType::SchemaOnly
+        };
+        let mut fwriter = File::create(&self.file)?;
+        dump_db(&args.get_url()?, &mut fwriter, &dump_type, &self.schema)?;
         Ok(())
     }
 }

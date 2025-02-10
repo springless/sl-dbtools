@@ -14,7 +14,7 @@ pub struct MigrationPlanner {
     folder: PathBuf,
 }
 
-trait FindVersion {
+pub trait FindVersion {
     /// Searches for a version that matches the provided target version string. And returns
     /// the fully specified MigrationVersion if found.
     fn search_version(self: &Self, target: &str) -> Option<&SchemaVersion>;

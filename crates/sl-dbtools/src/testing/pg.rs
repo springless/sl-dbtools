@@ -1,13 +1,15 @@
 use std::path::Path;
 
-use crate::db::transient::{
-    pg::{
-        PgTransientDb,
-        PgTransientDbBuilder,
-    }, Initial, Seed, TransientDbBuilder
+use crate::db::{
+    managed::{
+        pg::PgManagedDb,
+        Seed,
+    }, manager::pg::{
+        Initial, PgManagedDbBuilder
+    }, url::DbUrl
 };
 
-/// Convenience wrapper for a struct that can quickly create transient
+/// Convenience wrapper for a struct that can quickly create managed
 /// databases on request for use in unit testing. It is recommended
 /// to create a singleton instance of this test environment in a common
 /// testing file, and then utilize it in each test. eg.
@@ -16,7 +18,7 @@ use crate::db::transient::{
 /// // in common file
 /// use sl_dbtools::{
 ///     testing::pg::PgTestEnv,
-///     db::transient::{Initial, Seed},
+///     db::managed::{Initial, Seed},
 /// };
 /// use std::sync::LazyLock;
 /// pub static TEST_ENV: LazyLock<PgTestEnv> = LazyLock::new(|| {
@@ -27,7 +29,7 @@ use crate::db::transient::{
 /// // in testing file
 /// #[cfg(test)]
 /// mod tests {
-///     use sl_dbtools::db::transient::{Initial, Seed};
+///     use sl_dbtools::db::managed::{Initial, Seed};
 ///     use crate::common::test::TEST_ENV;
 ///
 ///     #[tokio::test]
@@ -51,13 +53,13 @@ use crate::db::transient::{
 /// }
 /// ```
 pub struct PgTestEnv {
-    pub base_url: String,
-    pub admin_url: Option<String>,
+    pub base_url: DbUrl,
+    pub admin_url: Option<DbUrl>,
 }
 
 impl PgTestEnv {
     /// Creates a new `PgTestEnv` based on values pulled from the environment.
-    /// It will look for `DATABASE_URL` to find the base URL for new transient
+    /// It will look for `DATABASE_URL` to find the base URL for new managed
     /// databases, as well as `DATABASE_ADMIN_URL` to find the URL to use to
     /// connect to the postgres server with permissions to generate a new database.
     /// If `DATABASE_ADMIN_URL` is not provided, it will attempt to use the same
@@ -70,8 +72,12 @@ impl PgTestEnv {
             dotenv::from_path(path.as_ref()).ok();
         }
         PgTestEnv {
-            base_url: std::env::var("DATABASE_URL").expect("Set DATABASE_URL in the environment"),
-            admin_url: std::env::var("DATABASE_ADMIN_URL").ok(),
+            base_url: DbUrl::parse(
+                &std::env::var("DATABASE_URL").expect("Set DATABASE_URL in the environment")
+            ).expect("DATABASE_URL is invalid"),
+            admin_url: std::env::var("DATABASE_ADMIN_URL")
+                .ok()
+                .map(|url| DbUrl::parse(&url).expect("DATABASE_ADMIN_URL is provided but invalid")),
         }
     }
 
@@ -86,18 +92,18 @@ impl PgTestEnv {
         test_name: &str,
         initial: Initial,
         seeds: Vec<Seed>,
-    ) -> PgTransientDb {
-        PgTransientDbBuilder::new(
+    ) -> PgManagedDb {
+        PgManagedDbBuilder::new(
             &self.base_url,
-            self.admin_url.as_deref(),
+            &self.admin_url,
             initial,
         )
-            .expect("Failed to create transient db builder")
+            .expect("Failed to create managed db builder")
             .set_name(test_name.to_owned())
             .set_seeds(seeds)
             .build()
             .await
-            .expect("Failed to create transient db")
+            .expect("Failed to create managed db")
     }
 }
 

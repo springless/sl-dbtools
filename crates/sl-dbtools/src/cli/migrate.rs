@@ -1,11 +1,10 @@
 use clap::Args;
-use sqlx::{Connection, PgConnection, PgPool};
+use log::info;
 
 use crate::migrate::{
+    file::FileMigrator,
     manager::{MigrationManager, PgMigrationManager},
-    pg::get_version,
-    planner::MigrationPlanner,
-    version::{SchemaVersion, TargetVersion}
+    version::TargetVersion,
 };
 
 use super::{SlArgs, error::CliError};
@@ -96,6 +95,34 @@ pub struct MigrateArgs {
     /// migrated independently, then this lets you specify which schema is being migrated.
     #[arg(short, long)]
     pub schema_dir: bool,
+
+    /// Changes the operation of the migration to act on a specified file or directory instead
+    /// of the current database (although the current database connection is still necessary
+    /// as the base for temporary databases that will be created to facilitate the migration).
+    /// This will read in each SQL file in the directory (or the singular SQL file specified),
+    /// run the migrations on it to the specified target, and then dump it back out on top
+    /// of the old file, replacing it. This is intended to be used in seed and fixture databases
+    /// to quickly apply migrations to test data without having to manually load and dump
+    /// those fixtures. If the `--schema-file` flag is passed, then each of the fixtures
+    /// will be assumed to **not** include a schema, and so they will be loaded and dumped
+    /// as data-only, using the provided Schema File as the base schema. At the end of the
+    /// migrations, the schema file will also be migrated and dumped per the description of
+    /// that flag. Multiple directories or files can be passed in successive `-f` flags.
+    #[arg(short, long)]
+    pub file: Option<Vec<String>>,
+
+    /// Changes the operation of the migration to act on the specified schema file instead
+    /// of the current database (although the current database connection is still necessary
+    /// as the base for a temporary database that will be created to facilitate the migration).
+    /// This will load the provided schema file into a temporary database, run the migrations
+    /// on it, and then dump it back on top of the old schema file, replacing it. This is
+    /// intended to be used to maintain a copy of the database schema in your codebase.
+    /// If this flag is provided along with `--file` flags, then the files passed in those
+    /// flags will be assumed to be data-only, and this schema will be loaded prior to each
+    /// and before running the migrations. This file will be the last thing migrated at the
+    /// end of the process. Only one schema file can be provided.
+    #[arg(short='S', long)]
+    pub schema_file: Option<String>,
 }
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
@@ -121,8 +148,8 @@ impl MigrateArgs {
     }
 
     fn print_config(&self) {
-        println!("Dir: {}", self.get_dir().unwrap_or("NONE".to_owned()));
-        println!("View name: {}", self.get_view_name());
+        info!("Dir: {}", self.get_dir().unwrap_or("NONE".to_owned()));
+        info!("View name: {}", self.get_view_name());
     }
 
     fn get_migration_dir(&self) -> Result<String, CliError> {
@@ -136,14 +163,50 @@ impl MigrateArgs {
         Ok(url.clone())
     }
 
-    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
-        if args.verbose {
-            self.print_config();
-        }
+    /// Migration being performed on one or more files
+    async fn migrate_files(&self, args: &SlArgs) -> anyhow::Result<()> {
+        let migrate_files = if let Some(files) = &self.file {
+            files.clone()
+        } else {
+            vec![]
+        };
 
+        if let Some(target) = &self.target {
+            let target = TargetVersion::new_from_str(&target);
+            let migrator = FileMigrator {
+                base_url: args.get_url()?,
+                admin_url: args.get_admin_url()?,
+                migration_dir: self.get_migration_dir()?,
+                view_name: self.get_view_name(),
+            };
+
+            match &self.schema_file {
+                Some(schema_file) => {
+                    let res = migrator.migrate_files_with_schema(
+                        &target,
+                        schema_file,
+                        migrate_files,
+                    ).await?;
+                    Ok(res)
+                },
+                None => {
+                    let res = migrator.migrate_files(
+                        &target,
+                        migrate_files,
+                    ).await?;
+                    Ok(res)
+                },
+            }
+        } else {
+            Err(CliError::MissingArg("No target provided for file migration".to_owned()).into())
+        }
+    }
+
+    /// Migration being performed on the live database
+    async fn migrate_db(&self, args: &SlArgs) -> anyhow::Result<()> {
         let mut manager = PgMigrationManager::new(
             &self.get_migration_dir()?,
-            &args.get_url()?,
+            args.get_url()?,
             &self.get_view_name(),
         ).await?;
 
@@ -152,29 +215,43 @@ impl MigrateArgs {
             let target = TargetVersion::new_from_str(target_str);
             manager.set_target(target.clone())?;
 
-            println!("Initial state:");
-            println!("{}", manager);
+            info!("Initial state:");
+            info!("{}", manager);
 
             if None == manager.get_next_step() {
-                println!("Already at target: {}", &target);
+                info!("Already at target: {}", &target);
                 return Ok(());
             }
 
             while let Some(next_step) = manager.get_next_step() {
-                println!(
+                info!(
                     "Migrating: {} -> {}",
                     &manager.planner.get_current(),
                     next_step.version,
                 );
                 manager.do_next_migration().await?;
             }
-            println!();
-            println!("Done migrating. Final state:");
-            println!("{}", manager);
+            info!("");
+            info!("Done migrating. Final state:");
+            info!("{}", manager);
         } else {
-            println!("{}", manager);
+            info!("{}", manager);
         }
 
         Ok(())
+    }
+
+    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
+        if args.verbose {
+            self.print_config();
+        }
+
+        if let Some(_) = self.schema_file {
+            self.migrate_files(args).await
+        } else if let Some(_) = self.file {
+            self.migrate_files(args).await
+        } else {
+            self.migrate_db(args).await
+        }
     }
 }

@@ -1,32 +1,47 @@
-use std::fs::File;
-use std::path::Path;
 
-use std::io::{self, BufRead, BufReader, Lines, Write};
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+use crate::db::url::DbUrl;
 use crate::error::DbToolsError;
+
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+pub enum DumpType {
+    /// Schema and data
+    All,
+    DataOnly,
+    SchemaOnly,
+}
 
 /// Dumps the database to the specified file using `pg_dump`. This means that
 /// `pg_dump` must be installed on the system running this command.
-pub fn dump_db<P: AsRef<Path>>(
-    url: &str,
-    file: P,
-    with_data: bool,
+pub fn dump_db<W: Write>(
+    url: &DbUrl,
+    writer: &mut W,
+    dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
     let mut cmd = Command::new("pg_dump");
     let cmd = cmd
-        .arg(url)
+        .arg(url.to_string())
         .arg("--no-owner")
         .arg("--no-privileges");
 
-    let cmd = if with_data {
+    let cmd = if &DumpType::All == dump_type || &DumpType::DataOnly == dump_type {
         cmd
             .arg("--rows-per-insert=1000")
             .arg("--column-inserts")
-    } else {
+    } else { cmd };
+
+    let cmd = if &DumpType::DataOnly == dump_type {
+        cmd
+            .arg("--data-only")
+    } else if &DumpType::SchemaOnly == dump_type {
         cmd
             .arg("--schema-only")
+    } else {
+        cmd
     };
 
     let cmd = if let Some(schemas) = schemas {
@@ -42,7 +57,6 @@ pub fn dump_db<P: AsRef<Path>>(
 
     if let Some(stdout) = child.stdout.take() {
         let reader = BufReader::new(stdout);
-        let mut outfile = File::create(file.as_ref())?;
         // This is set to true to prevent a series of blank lines in the file.
         // It starts off true to remove any blanks in the leadup to the first
         // kept line.
@@ -52,7 +66,7 @@ pub fn dump_db<P: AsRef<Path>>(
             let is_blank = line.trim().is_empty();
 
             // check for any `SET` or `--` (comment) lines and skip them when outputting
-            if line.starts_with("SET") || line.starts_with("--") {
+            if !keep_dump_line(&line) {
                 continue;
             }
             // Remove any long blocks of blank lines in the file
@@ -64,7 +78,7 @@ pub fn dump_db<P: AsRef<Path>>(
                 consecutive_blank_line = false;
             }
 
-            writeln!(outfile, "{}", line)?;
+            writeln!(writer, "{}", line)?;
         }
     }
 

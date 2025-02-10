@@ -1,4 +1,4 @@
-use sqlx::{postgres::PgConnectOptions, Error, ConnectOptions, Executor};
+use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, Error, Executor};
 
 /// Attempts to guess the name of the maintenance database. It is theoretically possible
 /// that a postgres server will not have `postgres` or `template1`, but this assumes that
@@ -49,6 +49,27 @@ pub async fn create_owned_database(
     Ok(())
 }
 
+/// Checks if the provided db name exists in the maintenance database. The
+/// passed connection options should be for a maintenance database.
+pub async fn check_if_exists(
+    conn_opts: &PgConnectOptions,
+    db_name: &str,
+) -> Result<bool, Error> {
+    let mut conn = conn_opts.connect().await?;
+    let row = query(
+        "SELECT 1 FROM pg_database WHERE datname = $1",
+    )
+        .bind(db_name)
+        .fetch_one(&mut conn)
+        .await;
+
+    match row {
+        Ok(_) => Ok(true), // row was found, database exists
+        Err(sqlx::Error::RowNotFound) => Ok(false), // no rows, database does not exist
+        Err(e) => Err(e),
+    }
+}
+
 /// Creates a database, given an admin connection, and assigns ownership to the
 /// username provided in the base connection
 /// Shamelessly stolen and tweaked from core sqlx
@@ -95,5 +116,3 @@ pub async fn force_drop_database(
 
     Ok(())
 }
-
-

@@ -1,11 +1,10 @@
-use std::{fmt::{Display, Write}, path::{Path, PathBuf}, str::FromStr};
+use std::{fmt::{Display, Write}, path::Path};
 use sqlx::{
     Connection,
-    postgres::PgConnectOptions,
     PgConnection,
 };
 
-use crate::error::DbToolsError;
+use crate::{db::url::DbUrl, error::{DbToolsError, SqlErrorWithContext}};
 
 use super::{
     pg::{
@@ -33,7 +32,7 @@ pub trait MigrationManager {
 
 pub struct PgMigrationManager {
     pub planner: MigrationPlanner,
-    pub conn_opts: PgConnectOptions,
+    pub url: DbUrl,
     pub view_name: String,
     pub target_version: SchemaVersion,
     migration_path: MigrationPath,
@@ -42,20 +41,19 @@ pub struct PgMigrationManager {
 impl PgMigrationManager {
     pub async fn new<P>(
         folder: P,
-        url: &str,
+        url: DbUrl,
         view_name: &str,
     ) -> Result<Self, DbToolsError>
     where P: AsRef<Path>
     {
-        let conn_opts = PgConnectOptions::from_str(url)?;
-        let mut conn = PgConnection::connect_with(&conn_opts).await?;
+        let mut conn = PgConnection::connect_with(&url.get_pg_conn_opts()?).await?;
         let current_version = get_version(&mut conn, view_name).await?;
         let planner = MigrationPlanner::new_from_folder(&folder, current_version)?;
         let target_version = planner.get_current().clone();
         let migration_path = vec![];
         Ok(PgMigrationManager {
             planner,
-            conn_opts,
+            url,
             view_name: view_name.to_string(),
             target_version,
             migration_path,
@@ -138,14 +136,21 @@ impl MigrationManager for PgMigrationManager {
 
         let raw_sql = next.action.get_raw_sql().await?;
 
-        let mut conn = PgConnection::connect_with(&self.conn_opts).await?;
+        let mut conn = PgConnection::connect_with(&self.url.get_pg_conn_opts()?).await?;
         let mut tx = conn.begin().await?;
 
         // run the migration file, if it exists
         if let Some(raw_sql) = raw_sql {
-            sqlx::raw_sql(&raw_sql)
+            let res = sqlx::raw_sql(&raw_sql)
                 .execute(&mut *tx)
-                .await?;
+                .await;
+            if let Err(sqlx_err) = res {
+                return Err(DbToolsError::SqlWithContext(SqlErrorWithContext {
+                    e: sqlx_err,
+                    filename: None,
+                    query: Some(raw_sql),
+                }))
+            }
         }
 
         // update the version stored in the database before ending the transaction
