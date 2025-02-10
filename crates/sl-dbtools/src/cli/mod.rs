@@ -2,6 +2,7 @@
 use clap::{Parser, Subcommand};
 use dump::DumpArgs;
 use error::CliError;
+use load::LoadArgs;
 use log::{info, LevelFilter};
 use logger::SimpleLogger;
 use migrate::MigrateArgs;
@@ -18,6 +19,7 @@ mod migrate;
 mod temp;
 mod error;
 mod dump;
+mod load;
 mod logger;
 
 //
@@ -80,6 +82,7 @@ enum SlSubcommand {
     Migrate(MigrateArgs),
     Temp(TempArgs),
     Dump(DumpArgs),
+    Load(LoadArgs),
 }
 
 impl SlSubcommand {
@@ -92,6 +95,9 @@ impl SlSubcommand {
                 sub_args.run(args)?;
             },
             Self::Dump(sub_args) => {
+                sub_args.run(args).await?;
+            },
+            Self::Load(sub_args) => {
                 sub_args.run(args).await?;
             },
         }
