@@ -66,7 +66,7 @@ pub fn dump_db<W: Write>(
             let is_blank = line.trim().is_empty();
 
             // check for any `SET` or `--` (comment) lines and skip them when outputting
-            if line.starts_with("SET") || line.starts_with("--") {
+            if !keep_dump_line(&line) {
                 continue;
             }
             // Remove any long blocks of blank lines in the file

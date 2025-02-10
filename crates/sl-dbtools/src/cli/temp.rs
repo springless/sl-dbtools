@@ -87,15 +87,15 @@ pub struct TempArgs {
 }
 
 impl TempArgs {
-    pub fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
+    pub fn run(&self, _args: &SlArgs) -> anyhow::Result<()> {
         match &self.command {
-            TempCommand::Clean(sub_args) => {
+            TempCommand::Clean(_sub_args) => {
                 info!("Cleaning...");
             },
-            TempCommand::Create(sub_args) => {
+            TempCommand::Create(_sub_args) => {
                 info!("Creating...");
             },
-            TempCommand::List(sub_args) => {
+            TempCommand::List(_sub_args) => {
                 info!("Listing...");
             },
         }

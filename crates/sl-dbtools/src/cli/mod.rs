@@ -8,7 +8,7 @@ use migrate::MigrateArgs;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 use temp::TempArgs;
 
-use crate::{db::url::DbUrl, error::DbToolsError, util::{pg::parse_for_maintenance}};
+use crate::{db::url::DbUrl, error::DbToolsError, util::pg::parse_for_maintenance};
 
 //
 // Modules
@@ -146,13 +146,6 @@ impl SlArgs {
         Ok(admin_url)
     }
 
-    fn get_admin_conn_opts(&self) -> Result<PgConnectOptions, CliError> {
-        self.get_admin_url()?
-            .get_pg_conn_opts()
-            .map_err(DbToolsError::from)
-            .map_err(CliError::from)
-    }
-
     fn print_config(&self) {
         info!("Main Database:  {}", self.get_url()
             .map(|url| url.to_string())
@@ -163,7 +156,7 @@ impl SlArgs {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        log::set_logger(&LOGGER)
+        let _ = log::set_logger(&LOGGER)
             .map(|()| log::set_max_level(LevelFilter::Info));
         // attempt to read a `.env` file unless explicitly told not to
         if !self.no_env {
