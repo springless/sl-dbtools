@@ -1,4 +1,3 @@
-use std::str::FromStr;
 
 use clap::{Parser, Subcommand};
 use dump::DumpArgs;
@@ -6,10 +5,10 @@ use error::CliError;
 use log::{info, LevelFilter};
 use logger::SimpleLogger;
 use migrate::MigrateArgs;
-use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, ConnectOptions, Connection, Database, Postgres};
+use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 use temp::TempArgs;
 
-use crate::{db::url::DbUrl, error::DbToolsError, util::{self, pg::parse_for_maintenance}};
+use crate::{db::url::DbUrl, error::DbToolsError, util::{pg::parse_for_maintenance}};
 
 //
 // Modules

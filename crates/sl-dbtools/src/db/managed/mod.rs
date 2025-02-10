@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use sqlx::{Connection, Database};
+use sqlx::Database;
 
 pub mod pg;
 

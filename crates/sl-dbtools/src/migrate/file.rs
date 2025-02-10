@@ -1,9 +1,8 @@
 // File migration utilities
 
-use std::{fs::File, io::Write, ops::Deref, path::Path};
+use std::{fs::File, io::Write, path::Path};
 
 use log::info;
-use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 
 use crate::{
     db::{

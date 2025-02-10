@@ -59,10 +59,7 @@ impl ManagedDb<Postgres> for PgManagedDb {
 mod tests {
     use super::*;
     use crate::{db::{managed::Seed, manager::pg::Initial}, test::TEST_ENV};
-    use sqlx::{
-        Row,
-        ConnectOptions,
-    };
+    use sqlx::Row;
 
     #[tokio::test]
     async fn test_db_create() {

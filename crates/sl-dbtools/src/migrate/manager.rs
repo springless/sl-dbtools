@@ -1,7 +1,6 @@
-use std::{fmt::{Display, Write}, path::{Path, PathBuf}, str::FromStr};
+use std::{fmt::{Display, Write}, path::Path};
 use sqlx::{
     Connection,
-    postgres::PgConnectOptions,
     PgConnection,
 };
 

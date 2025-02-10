@@ -1,5 +1,4 @@
 use sqlx::Database;
-use url::Url;
 
 use super::{managed::ManagedDb, url::DbUrl};
 

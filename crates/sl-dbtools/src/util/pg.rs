@@ -1,4 +1,4 @@
-use sqlx::{postgres::{PgConnectOptions, PgDatabaseError}, query, ConnectOptions, Error, Executor};
+use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, Error, Executor};
 
 /// Attempts to guess the name of the maintenance database. It is theoretically possible
 /// that a postgres server will not have `postgres` or `template1`, but this assumes that
