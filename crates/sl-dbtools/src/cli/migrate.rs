@@ -178,16 +178,19 @@ impl MigrateArgs {
 
         if let Some(target) = &self.target {
             let target = TargetVersion::new_from_str(&target);
-            let migrator = FileMigrator {
-                base_url: args.get_url()?,
-                admin_url: args.get_admin_url()?,
-                migration_dir: self.get_migration_dir()?,
-                view_name: self.get_view_name(),
-            };
+
+            let base_url = args.get_url()?;
+            let admin_url = args.get_admin_url()?;
+            let migration_dir = self.get_migration_dir()?;
+            let view_name = self.get_view_name();
 
             match &self.schema_file {
                 Some(schema_file) => {
-                    let res = migrator.migrate_files_with_schema(
+                    let res = FileMigrator::migrate_files_with_schema(
+                        base_url,
+                        Some(admin_url),
+                        &migration_dir,
+                        &view_name,
                         &target,
                         schema_file,
                         migrate_files,
@@ -195,7 +198,11 @@ impl MigrateArgs {
                     Ok(res)
                 },
                 None => {
-                    let res = migrator.migrate_files(
+                    let res = FileMigrator::migrate_files(
+                        base_url,
+                        Some(admin_url),
+                        &migration_dir,
+                        &view_name,
                         &target,
                         migrate_files,
                     ).await?;

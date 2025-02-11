@@ -1,6 +1,6 @@
 // File migration utilities
 
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, io::Write, path::{Path, PathBuf}};
 
 use log::info;
 
@@ -27,94 +27,187 @@ use crate::{
 };
 
 pub struct FileMigrator {
-    pub base_url: DbUrl,
-    pub admin_url: DbUrl,
-    pub migration_dir: String,
-    pub view_name: String,
+    base_url: DbUrl,
+    admin_url: DbUrl,
+    file: SqlFile,
+    db: Option<PgManagedDb>,
+    manager: Option<PgMigrationManager>,
+}
+
+#[derive(Clone)]
+pub enum SqlFile {
+    /// A schema-only file that contains no data
+    Schema(PathBuf),
+    /// A file that includes both schema and data
+    SchemaWithData(PathBuf),
+    /// A file that contains data, with an auxiliary schema file
+    Data { schema: PathBuf, data: PathBuf },
 }
 
 impl FileMigrator {
-    async fn create_db_for_file(
-        &self,
-        file: &Path,
-        schema: Option<&Path>,
-    ) -> Result<PgManagedDb, DbToolsError> {
+    fn new(
+        file: SqlFile,
+        base_url: DbUrl,
+        admin_url: Option<DbUrl>,
+    ) -> Self {
+        FileMigrator {
+            admin_url: if let Some(admin_url) = admin_url { admin_url } else { base_url.guess_pg_maintenance_url() },
+            base_url,
+            file,
+            db: None,
+            manager: None,
+        }
+    }
+
+    /// Create the datbase to house this file. Generates a random database name
+    async fn create_db(mut self) -> Result<Self, DbToolsError> {
         let db_builder = PgTempDbBuilder::new(
             &self.base_url,
             &Some(self.admin_url.clone()),
             Initial::Empty,
         )?;
-        let db_builder = if let Some(schema_file) = schema {
-            db_builder.add_seed(Seed::File(schema_file.to_path_buf()))
-        } else { db_builder };
-        let db_builder = db_builder.add_seed(Seed::File(file.to_path_buf()));
+
+        let db_builder = match &self.file {
+            SqlFile::SchemaWithData(fname) => {
+                db_builder.add_seed(Seed::File(fname.to_owned()))
+            }
+            SqlFile::Schema(fname) => {
+                db_builder.add_seed(Seed::File(fname.to_owned()))
+            }
+            SqlFile::Data { schema, data } => {
+                db_builder
+                    .add_seed(Seed::File(schema.to_owned()))
+                    .add_seed(Seed::File(data.to_owned()))
+            }
+        };
 
         let created_db = db_builder.build().await?;
-        Ok(created_db)
+        self.db = Some(created_db);
+        Ok(self)
     }
 
-    async fn migrate_file<W: Write>(
-        &self,
-        target: &TargetVersion,
-        file: &Path,
-        writer: &mut W,
-        schema: Option<&Path>,
-        dump_type: &DumpType,
-    ) -> Result<(), DbToolsError> {
-        let temp_db = self.create_db_for_file(&file, schema).await?;
-
+    /// Create the migration manager for the file's database.
+    async fn create_migrator(mut self, folder: PathBuf, view_name: &str) -> Result<Self, DbToolsError> {
+        let db = self.db.as_ref().unwrap();
         let manager = PgMigrationManager::new(
-            self.migration_dir.clone(),
-            temp_db.url().clone(),
-            &self.view_name,
+            folder,
+            db.url().clone(),
+            view_name,
         ).await;
 
         if let Err(mgr_err) = manager {
-            temp_db.drop().await?;
+            let _ = self.cleanup().await?;
             return Err(mgr_err);
         }
-        let mut manager = manager?;
+        self.manager = Some(manager.unwrap());
+        Ok(self)
+    }
 
-        manager.set_target(target.clone())?;
+    async fn migrate(mut self, target: &TargetVersion) -> Result<Self, DbToolsError> {
+        let mgr = self.manager.as_mut().unwrap();
+        mgr.set_target(target.clone())?;
 
-        if None == manager.get_next_step() {
-            temp_db.drop().await?;
-            return Ok(());
+        while let Some(_) = mgr.get_next_step() {
+            mgr.do_next_migration().await?;
         }
+        Ok(self)
+    }
 
-        while let Some(_) = manager.get_next_step() {
-            manager.do_next_migration().await?;
+    async fn dump<W: Write>(self, writer: &mut W) -> Result<Self, DbToolsError> {
+        let db = self.db.as_ref().unwrap();
+
+        match &self.file {
+            SqlFile::Schema(_) => {
+                dump_db(
+                    &db.url(),
+                    writer,
+                    &DumpType::SchemaOnly,
+                    &None,
+                )?;
+            }
+            SqlFile::SchemaWithData(_) => {
+                dump_db(
+                    &db.url(),
+                    writer,
+                    &DumpType::All,
+                    &None,
+                )?;
+            }
+            SqlFile::Data { schema: _, data: _ } => {
+                dump_db(
+                    &db.url(),
+                    writer,
+                    &DumpType::DataOnly,
+                    &None,
+                )?;
+            }
         }
+        Ok(self)
+    }
 
-        dump_db(
-            &temp_db.url(),
-            writer,
-            dump_type,
-            &None,
-        )?;
-
-        temp_db.drop().await?;
+    /// Cleans up this file migration, deleting the database being used if it
+    /// was created.
+    async fn cleanup(self) -> Result<(), DbToolsError> {
+        if let Some(db) = self.db {
+            db.drop().await?;
+        }
         Ok(())
     }
+
+    /// Migrates a file on top of itself
+    async fn migrate_file(
+        base_url: DbUrl,
+        admin_url: Option<DbUrl>,
+        file: SqlFile,
+        migration_folder: &Path,
+        view_name: &str,
+        target: &TargetVersion,
+    ) -> Result<(), DbToolsError> {
+        let file_migrator = Self::new(
+            file.clone(),
+            base_url,
+            admin_url,
+        );
+        let dump_path = match &file {
+            SqlFile::Data { schema: _, data } => data,
+            SqlFile::Schema(schema) => schema,
+            SqlFile::SchemaWithData(schema) => schema,
+        };
+        let _ = file_migrator
+            .create_db().await?
+            .create_migrator(migration_folder.to_owned(), view_name).await?
+            .migrate(target).await?
+            .dump(&mut File::create(dump_path)?).await?
+            .cleanup().await?;
+        Ok(())
+    }
+
 
     /// Migrates files that are assumed to be full schema + data files. This will load
     /// them into a database, run the migrations, and then dump them back out on top
     /// of their original file location.
-    pub async fn migrate_files<P: AsRef<Path>>(
-        &self,
+    pub async fn migrate_files<
+        P: AsRef<Path>,
+        F: AsRef<Path>,
+        I: IntoIterator<Item=P>
+    >(
+        base_url: DbUrl,
+        admin_url: Option<DbUrl>,
+        migration_folder: F,
+        view_name: &str,
         target: &TargetVersion,
-        files: Vec<P>,
+        files: I,
     ) -> Result<(), DbToolsError> {
         for f in files {
             let fname = f.as_ref();
-            let mut fwriter = File::create("newfile.sql")?;
             info!("Migrating Schema+Data File: {:?}", fname);
-            let _ = self.migrate_file(
+            let _ = Self::migrate_file(
+                base_url.clone(),
+                admin_url.clone(),
+                SqlFile::SchemaWithData(fname.to_owned()),
+                migration_folder.as_ref(),
+                view_name,
                 target,
-                fname,
-                &mut fwriter,
-                None,
-                &DumpType::All,
             ).await?;
         }
         Ok(())
@@ -125,11 +218,19 @@ impl FileMigrator {
     /// file, then create a data-only dump on top of the old data file location. Once all
     /// of the data files are migrated, it will migrate the schema file and do a schema-only
     /// dump on top of the old schema file location.
-    pub async fn migrate_files_with_schema<P: AsRef<Path>, P2: AsRef<Path>>(
-        &self,
+    pub async fn migrate_files_with_schema<
+        P: AsRef<Path>,
+        P2: AsRef<Path>,
+        F: AsRef<Path>,
+        I: IntoIterator<Item=P2>
+    >(
+        base_url: DbUrl,
+        admin_url: Option<DbUrl>,
+        migration_folder: &F,
+        view_name: &str,
         target: &TargetVersion,
         schema: P,
-        files: Vec<P2>,
+        files: I,
     ) -> Result<(), DbToolsError> {
         let schema_path = schema.as_ref();
 
@@ -137,41 +238,28 @@ impl FileMigrator {
         // for each
         for f in files {
             let fname = f.as_ref();
-            let mut fwriter = File::create(fname)?;
             info!("Migrating Data File: {:?}", fname);
-            let _ = self.migrate_file(
+            let _ = Self::migrate_file(
+                base_url.clone(),
+                admin_url.clone(),
+                SqlFile::Data{ schema: schema_path.to_owned(), data: fname.to_owned() },
+                migration_folder.as_ref(),
+                view_name,
                 target,
-                fname,
-                &mut fwriter,
-                Some(schema_path),
-                &DumpType::DataOnly,
             ).await?;
         }
 
         // Now we can finish by migrating the schema file
-        let _ = self.migrate_schema(
+        info!("Migrating Schema File: {:?}", schema_path);
+        let _ = Self::migrate_file(
+            base_url.clone(),
+            admin_url.clone(),
+            SqlFile::Schema(schema_path.to_owned()),
+            migration_folder.as_ref(),
+            view_name,
             target,
-            schema_path,
         ).await?;
 
-        Ok(())
-    }
-
-    pub async fn migrate_schema<P: AsRef<Path>>(
-        &self,
-        target: &TargetVersion,
-        schema_file: P,
-    ) -> Result<(), DbToolsError> {
-        let fname = schema_file.as_ref();
-        let mut fwriter = File::create(fname)?;
-        info!("Migrating Schema File: {:?}", fname);
-        let _ = self.migrate_file(
-            target,
-            fname,
-            &mut fwriter,
-            None,
-            &DumpType::SchemaOnly,
-        ).await?;
         Ok(())
     }
 }
@@ -190,19 +278,20 @@ mod tests {
         let test_file = TEST_ENV.seed_path("pg/01-mid-migrate.sql");
         let mut buf = Cursor::new(Vec::new());
 
-        let migrator = FileMigrator {
-            base_url: TEST_ENV.get_postgres_url().clone(),
-            admin_url: TEST_ENV.get_postgres_admin_url(),
-            view_name: "_schema_version".to_owned(),
-            migration_dir: "../../tests/migrations".to_owned(),
-        };
-        let res = migrator.migrate_file(
-            &TargetVersion::Current(2),
-            &test_file,
-            &mut buf,
-            None,
-            &DumpType::All
-        ).await;
+        let migrator = FileMigrator::new(
+            SqlFile::SchemaWithData(test_file),
+            TEST_ENV.get_postgres_url().clone(),
+            Some(TEST_ENV.get_postgres_admin_url()),
+        );
+
+        let res = migrator
+            .create_db().await.unwrap()
+            .create_migrator("../../tests/migrations".into(), "_schema_version")
+            .await.unwrap()
+            .migrate(&TargetVersion::Current(2)).await.unwrap()
+            .dump(&mut buf).await.unwrap()
+            .cleanup().await;
+
         assert!(res.is_ok(), "Received an error during file migration: {:?}", res.err());
         let migrated_str = String::from_utf8(buf.into_inner()).unwrap();
         assert_debug_snapshot!(
