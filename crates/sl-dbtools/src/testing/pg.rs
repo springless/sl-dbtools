@@ -4,9 +4,10 @@ use crate::db::{
     managed::{
         pg::PgManagedDb,
         Seed,
-    }, manager::pg::{
-        Initial, PgManagedDbBuilder
-    }, url::DbUrl
+    }, temp::pg::{
+        Initial, PgTempDbBuilder
+    },
+    url::DbUrl
 };
 
 /// Convenience wrapper for a struct that can quickly create managed
@@ -93,7 +94,7 @@ impl PgTestEnv {
         initial: Initial,
         seeds: Vec<Seed>,
     ) -> PgManagedDb {
-        PgManagedDbBuilder::new(
+        PgTempDbBuilder::new(
             &self.base_url,
             &self.admin_url,
             initial,

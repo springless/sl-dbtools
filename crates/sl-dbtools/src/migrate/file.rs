@@ -8,8 +8,8 @@ use crate::{
     db::{
         managed::{
             pg::PgManagedDb, ManagedDb, Seed
-        }, manager::pg::{
-            Initial, PgManagedDbBuilder
+        }, temp::pg::{
+            Initial, PgTempDbBuilder
         }, url::DbUrl
     },
     dump::pgdump::{
@@ -34,7 +34,7 @@ impl FileMigrator {
         file: &Path,
         schema: Option<&Path>,
     ) -> Result<PgManagedDb, DbToolsError> {
-        let db_builder = PgManagedDbBuilder::new(
+        let db_builder = PgTempDbBuilder::new(
             &self.base_url,
             &Some(self.admin_url.clone()),
             Initial::Empty,

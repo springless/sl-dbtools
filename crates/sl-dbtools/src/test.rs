@@ -7,8 +7,8 @@ use crate::db::{
     managed::{
         pg::PgManagedDb,
         Seed,
-    }, manager::pg::{
-        Initial, PgManagedDbBuilder
+    }, temp::pg::{
+        Initial, PgTempDbBuilder
     }, url::DbUrl
 };
 
@@ -87,7 +87,7 @@ impl TestEnv {
             }
         })
             .collect();
-        PgManagedDbBuilder::new(
+        PgTempDbBuilder::new(
             &self.postgres_url,
             &self.postgres_admin_url,
             initial,

@@ -58,7 +58,7 @@ impl ManagedDb<Postgres> for PgManagedDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::{managed::Seed, manager::pg::Initial}, test::TEST_ENV};
+    use crate::{db::{managed::Seed, temp::pg::Initial}, test::TEST_ENV};
     use sqlx::Row;
 
     #[tokio::test]
