@@ -2,8 +2,6 @@ use std::path::PathBuf;
 
 use sqlx::Database;
 
-pub mod pg;
-
 /// A seed is used to send SQL to a database and represents the source used to get the
 /// script, for example loading from a file or directly from a string in memory.
 pub enum Seed {

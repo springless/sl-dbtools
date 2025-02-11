@@ -5,21 +5,26 @@ use std::{fs::File, io::Write, path::Path};
 use log::info;
 
 use crate::{
-    db::{
-        managed::{
-            pg::PgManagedDb, ManagedDb, Seed
-        }, temp::pg::{
-            Initial, PgTempDbBuilder
-        }, url::DbUrl
+    url::DbUrl,
+    managed::{ManagedDb, Seed},
+    migrate::{
+        manager::MigrationManager,
+        version::TargetVersion,
     },
-    dump::pgdump::{
-        dump_db,
-        DumpType
+    db::pg::{
+        migrate::PgMigrationManager,
+        managed::PgManagedDb,
+        temp::{
+            Initial,
+            PgTempDbBuilder
+        },
+        util::dump::{
+            dump_db,
+            DumpType,
+        },
     },
-    error::DbToolsError
+    error::DbToolsError,
 };
-
-use super::{manager::{MigrationManager, PgMigrationManager}, version::TargetVersion};
 
 pub struct FileMigrator {
     pub base_url: DbUrl,

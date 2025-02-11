@@ -1,8 +1,9 @@
+/// Utility functions for dumping data from the datbase
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use crate::db::url::DbUrl;
+use crate::url::DbUrl;
 use crate::error::DbToolsError;
 
 

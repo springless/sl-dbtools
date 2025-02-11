@@ -2,7 +2,7 @@ use std::fs::File;
 
 use clap::Args;
 
-use crate::dump::pgdump::{dump_db, DumpType};
+use crate::db::pg::util::dump::{dump_db, DumpType};
 
 use super::SlArgs;
 

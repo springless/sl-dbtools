@@ -1,8 +1,10 @@
 use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Postgres};
 
-use crate::{db::{manager::pg::PgManagerDb, url::DbUrl}, util};
+use crate::url::DbUrl;
+use super::util;
+use super::manager::PgManagerDb;
 
-use super::ManagedDb;
+use crate::managed::{ManagedDb, Seed};
 
 pub struct PgManagedDb {
     url: DbUrl,
@@ -34,7 +36,7 @@ impl PgManagedDb {
 }
 
 impl ManagedDb<Postgres> for PgManagedDb {
-    async fn seed(&self, seed: super::Seed) -> Result<(), sqlx::Error> {
+    async fn seed(&self, seed: Seed) -> Result<(), sqlx::Error> {
         let conn = PgPoolOptions::new()
             .connect_with(self.conn_opts.clone())
             .await?;
@@ -48,7 +50,7 @@ impl ManagedDb<Postgres> for PgManagedDb {
     }
 
     async fn drop(self) -> Result<(), sqlx::Error> {
-        util::pg::force_drop_database(
+        util::create::force_drop_database(
             &self.conn_opts(),
             &self.manager.conn_opts(),
         ).await
@@ -58,7 +60,11 @@ impl ManagedDb<Postgres> for PgManagedDb {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::{managed::Seed, temp::pg::Initial}, test::TEST_ENV};
+    use crate::{
+        managed::Seed,
+        db::pg::temp::Initial,
+        test::TEST_ENV
+    };
     use sqlx::Row;
 
     #[tokio::test]
@@ -177,3 +183,4 @@ mod tests {
         let _ = created_testdb.drop().await;
     }
 }
+

@@ -1,7 +1,12 @@
 use sqlx::{postgres::PgConnectOptions, Postgres};
-use crate::{db::{managed::pg::PgManagedDb, url::DbUrl}, util::pg::{check_if_exists, create_owned_database, create_owned_database_from_template}};
-
-use super::ManagerDb;
+use crate::{
+    db::pg::{
+        managed::PgManagedDb,
+        util::create::{check_if_exists, create_owned_database, create_owned_database_from_template},
+    },
+    manager::ManagerDb,
+    url::DbUrl
+};
 
 pub struct PgManagerDb {
     url: DbUrl,

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
-/// use sl_dbtools::db::namer::DbNamingProps;
+/// use sl_dbtools::namer::DbNamingProps;
 /// use chrono::{DateTime, Utc, TimeZone};
 /// use uuid::uuid;
 /// let props = DbNamingProps {
@@ -80,7 +80,7 @@ impl DbNamingProps {
 /// however, the name remains untouched.
 ///
 /// ```rust
-/// use sl_dbtools::db::namer::truncate_identifier;
+/// use sl_dbtools::namer::truncate_identifier;
 /// assert_eq!(
 ///     truncate_identifier(
 ///         "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71"
@@ -133,7 +133,7 @@ impl ToDbId for Uuid {
     /// Outputs the standard UUID string format, but with underscores
     /// instead of dashes
     /// ```rust
-    /// use sl_dbtools::db::namer::ToDbId;
+    /// use sl_dbtools::namer::ToDbId;
     /// assert_eq!(
     ///     uuid::uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
     ///         .to_db_id(),

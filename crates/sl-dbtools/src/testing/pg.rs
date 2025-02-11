@@ -1,11 +1,12 @@
 use std::path::Path;
 
-use crate::db::{
-    managed::{
-        pg::PgManagedDb,
-        Seed,
-    }, temp::pg::{
-        Initial, PgTempDbBuilder
+use crate::{
+    managed::Seed,
+    db::pg::{
+        managed::PgManagedDb,
+        temp::{
+            Initial, PgTempDbBuilder,
+        }
     },
     url::DbUrl
 };

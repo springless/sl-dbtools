@@ -1,4 +1,10 @@
-use crate::db::{managed::{pg::PgManagedDb, ManagedDb, Seed}, manager::{pg::PgManagerDb, ManagerDb}, url::DbUrl};
+use crate::{
+    url::DbUrl,
+    db::pg::managed::PgManagedDb,
+    managed::{ManagedDb, Seed},
+    manager::ManagerDb,
+    db::pg::manager::PgManagerDb,
+};
 
 pub enum Initial {
     Empty,

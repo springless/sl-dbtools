@@ -1,10 +1,15 @@
 use clap::Args;
 use log::info;
 
-use crate::migrate::{
-    file::FileMigrator,
-    manager::{MigrationManager, PgMigrationManager},
-    version::TargetVersion,
+use crate::{
+    db::pg::{
+        migrate::PgMigrationManager,
+        util::file::FileMigrator,
+    },
+    migrate::{
+        manager::MigrationManager,
+        version::TargetVersion,
+    }
 };
 
 use super::{SlArgs, error::CliError};

@@ -3,13 +3,15 @@ use std::{path::{Path, PathBuf}, sync::LazyLock};
 use log::error;
 use sqlx::postgres::PgConnectOptions;
 
-use crate::db::{
-    managed::{
-        pg::PgManagedDb,
-        Seed,
-    }, temp::pg::{
-        Initial, PgTempDbBuilder
-    }, url::DbUrl
+use crate::{
+    managed::Seed,
+    db::pg::{
+        managed::PgManagedDb,
+        temp::{
+            Initial, PgTempDbBuilder
+        },
+    },
+    url::DbUrl
 };
 
 /// Utility functions for managing test databases
