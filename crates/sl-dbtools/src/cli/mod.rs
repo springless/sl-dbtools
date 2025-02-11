@@ -26,16 +26,21 @@ mod logger;
 // /Modules
 //
 
+/// DBTools database management CLI
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 pub struct SlArgs {
-    /// URL of the main database. Can also be provided by `DATABASE_URL` in the environment. This
+    /// URL of the main database
+    ///
+    /// Can also be provided by `DATABASE_URL` in the environment. This
     /// flag will take precedence over the environment variable. This should conform to the
     /// typical URL database specification: `protocol://user:pass@host:port/database`
     #[arg(short, long)]
     pub url: Option<String>,
 
-    /// URL of the administrative database, required only for database creation or deletion
+    /// URL of the admin database
+    ///
+    /// Required only for database creation or deletion
     /// actions under certain conditions. If provided, this URL will be used to connect as an
     /// admin for creating and dropping databases. This value can also be provided by the
     /// `DATABASE_ADMIN_URL` environment variable. This flag will take precedence over the
@@ -51,6 +56,8 @@ pub struct SlArgs {
     #[arg(short, long)]
     pub admin_url: Option<String>,
 
+    /// Add a `.env` file
+    ///
     /// Reads in the `.env` file provided prior to running. The database and admin database
     /// URLs can be provided in the environment using `DATABASE_URL` and `DATABASE_ADMIN_URL`,
     /// instead of passing them as command line arguments. You can pass in multiple `.env`
@@ -61,7 +68,9 @@ pub struct SlArgs {
     #[arg(short, long)]
     env: Option<Vec<String>>,
 
-    /// Does not read any `.env` files prior to running the program. By default, it will
+    /// Skip all `.env` files
+    ///
+    ///Does not read any `.env` files prior to running the program. By default, it will
     /// attempt to read `.env` in the current directory. Setting this flag will prevent the
     /// program from doing that, as well as prevent it from reading any explicitly-passed
     /// `.env` files from `-e` flags.
@@ -71,6 +80,8 @@ pub struct SlArgs {
     #[command(subcommand)]
     command: SlSubcommand,
 
+    /// Output more information while running
+    ///
     /// Prints out additional information, such as configuration data, database
     /// connection strings, etc.
     #[arg(short, long)]
