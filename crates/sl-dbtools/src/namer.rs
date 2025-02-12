@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
-/// use sl_dbtools::db::namer::DbNamingProps;
+/// use sl_dbtools::namer::DbNamingProps;
 /// use chrono::{DateTime, Utc, TimeZone};
 /// use uuid::uuid;
 /// let props = DbNamingProps {
@@ -52,6 +52,31 @@ pub trait MakeNewConnectOpts {
     fn make_new_connection_default(&self, name: Option<&str>) -> Self;
 }
 
+/// Options for automatically generating a new name, so certain elements can be
+/// omitted or included without having to explicitly create a new Uuid or timestamp
+pub struct DbNamingOpts {
+    pub with_uuid: bool,
+    pub with_time: bool,
+    pub name: Option<String>,
+    pub base: Option<String>,
+    pub keep_full: bool,
+}
+
+impl DbNamingOpts {
+    pub fn build(self) -> DbNamingProps {
+        let base = if let Some(base) = self.base {
+            base
+        } else { "temp".to_owned() };
+        DbNamingProps {
+            base,
+            name: self.name,
+            time: if self.with_time { Some(Utc::now()) } else { None },
+            uuid: if self.with_uuid { Some(Uuid::new_v4()) } else { None },
+            keep_full: self.keep_full,
+        }
+    }
+}
+
 impl DbNamingProps {
     /// Creates a new database name utilizing the default configuration, which is
     /// including a timestamp, a uuid, and truncating the full name if it is over
@@ -70,6 +95,11 @@ impl DbNamingProps {
             keep_full: false,
         }
     }
+
+    /// Creates a new DbNamingProps instance from a DbNamingOpts object
+    pub fn new_from_opts(opts: DbNamingOpts) -> Self {
+        opts.build()
+    }
 }
 
 /// Postgres can only have a maximum identifier length of 63 characters, so this will take
@@ -80,7 +110,7 @@ impl DbNamingProps {
 /// however, the name remains untouched.
 ///
 /// ```rust
-/// use sl_dbtools::db::namer::truncate_identifier;
+/// use sl_dbtools::namer::truncate_identifier;
 /// assert_eq!(
 ///     truncate_identifier(
 ///         "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71"
@@ -133,7 +163,7 @@ impl ToDbId for Uuid {
     /// Outputs the standard UUID string format, but with underscores
     /// instead of dashes
     /// ```rust
-    /// use sl_dbtools::db::namer::ToDbId;
+    /// use sl_dbtools::namer::ToDbId;
     /// assert_eq!(
     ///     uuid::uuid!("67e55044-10b1-426f-9247-bb680e5fe0c8")
     ///         .to_db_id(),

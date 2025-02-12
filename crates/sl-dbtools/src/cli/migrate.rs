@@ -1,19 +1,28 @@
 use clap::Args;
 use log::info;
 
-use crate::migrate::{
-    file::FileMigrator,
-    manager::{MigrationManager, PgMigrationManager},
-    version::TargetVersion,
+use crate::{
+    db::pg::{
+        migrate::PgMigrationManager,
+        util::file::FileMigrator,
+    },
+    migrate::{
+        manager::MigrationManager,
+        version::TargetVersion,
+    }
 };
 
 use super::{SlArgs, error::CliError};
 
+/// Manage migration status of the database
+///
 /// Manages the migration status of the database, including running migrations, checking
 /// the current migration version, dry-running migrations, etc.
 #[derive(Args, Debug, Clone)]
 pub struct MigrateArgs {
-    /// The target migration. `HEAD` represents the last version in the migration path,
+    /// The target migration
+    ///
+    /// `HEAD` represents the last version in the migration path,
     /// while `@` references the current database version. For example, given versions `v01..v10`,
     /// if the database is currently on `v05`, a target of `HEAD` will run migrations `v06..v10`.
     ///
@@ -36,20 +45,22 @@ pub struct MigrateArgs {
     #[arg(value_name="TARGET", index=1)]
     pub target: Option<String>,
 
-    /// The directory in which all of the migration files are held. Migrations are raw SQL
-    /// files that represent an up or down migration of the schema. They should be named
-    /// according to whether they are an up or down migration with the template:
-    /// `version.up.sql` or `version.dn.sql`, and also named in such a way that sorting
-    /// them in lexicographical order puts them in the the order that they should be
-    /// run.
+    /// The directory that holds the migration files
+    ///
+    /// Migrations are raw SQL files that represent an up or down migration of the schema.
+    /// They should be named according to whether they are an up or down migration with the
+    /// template: `version.up.sql` or `version.dn.sql`, and also named in such a way that
+    /// sorting them in lexicographical order puts them in the the order that they should be run.
     ///
     /// The location of the directory can also be provided in the `MIGRATION_DIR` environment
     /// variable. This flag takes precedence over the environment.
     #[arg(short, long)]
     pub dir: Option<String>,
 
-    /// The name of the view that tracks migrations. Whenever a migration is applied, this
-    /// view is updated to return the version that the schema is currently on.
+    /// The name of the view that tracks migration version
+    ///
+    /// Whenever a migration is applied, this view is updated to return the version that
+    /// the schema is currently on.
     ///
     /// The name of this view can also be provided by the `MIGRATION_VIEW_NAME` environment
     /// variable. This flag takes precedence over the environment.
@@ -59,23 +70,29 @@ pub struct MigrateArgs {
     #[arg(short, long)]
     pub view_name: Option<String>,
 
-    /// Prints out the sequence of migration files that would run with the specified target
+    /// Only print the sequence of migrations that will be run for the target
     #[arg(short = 'D', long)]
     pub dry_run: bool,
 
+    /// Auto-approve any prompts
+    ///
     /// Under normal circumstances you will be told what is going to happen and asked to
     /// confirm prior to any changes being made to the database. This will prevent those
     /// confirmations.
     #[arg(short, long)]
     pub yes: bool,
 
-    /// Run all of the migrations within the same transaction. Without this flag each version
-    /// will be run in its own migration, meaning that in the event of an error, the database
-    /// schema version will be the last successful migration. With this flag set, an error
-    /// will revert the database to the same state it was in before running any migrations.
+    /// Run all migrations in a single transaction
+    ///
+    /// Without this flag each version will be run in its own migration, meaning that
+    /// in the event of an error, the database schema version will be the last successful
+    /// migration. With this flag set, an error will revert the database to the same state
+    /// it was in before running any migrations.
     #[arg(short, long)]
     pub all_or_nothing: bool,
 
+    /// Force-set the schema version in the database
+    ///
     /// Will not run any migrations, but will instead set the current schema version to
     /// be whatever version is being targeted.
     #[arg(short = 'o', long = "override")]
@@ -85,6 +102,8 @@ pub struct MigrateArgs {
     #[arg(short, long)]
     pub interactive: bool,
 
+    /// (Proposed) Specify a directory of files that comprise the schema
+    ///
     /// PROPOSED:
     /// Postgres-focused flag which indicates that the migration directory is actually
     /// comprised of multiple subdirectories, each of which handle the migrations for
@@ -96,6 +115,8 @@ pub struct MigrateArgs {
     #[arg(short, long)]
     pub schema_dir: bool,
 
+    /// Run the migration on a file
+    ///
     /// Changes the operation of the migration to act on a specified file or directory instead
     /// of the current database (although the current database connection is still necessary
     /// as the base for temporary databases that will be created to facilitate the migration).
@@ -111,6 +132,8 @@ pub struct MigrateArgs {
     #[arg(short, long)]
     pub file: Option<Vec<String>>,
 
+    /// Run the migration on a schema-only file
+    ///
     /// Changes the operation of the migration to act on the specified schema file instead
     /// of the current database (although the current database connection is still necessary
     /// as the base for a temporary database that will be created to facilitate the migration).
@@ -173,16 +196,19 @@ impl MigrateArgs {
 
         if let Some(target) = &self.target {
             let target = TargetVersion::new_from_str(&target);
-            let migrator = FileMigrator {
-                base_url: args.get_url()?,
-                admin_url: args.get_admin_url()?,
-                migration_dir: self.get_migration_dir()?,
-                view_name: self.get_view_name(),
-            };
+
+            let base_url = args.get_url()?;
+            let admin_url = args.get_admin_url()?;
+            let migration_dir = self.get_migration_dir()?;
+            let view_name = self.get_view_name();
 
             match &self.schema_file {
                 Some(schema_file) => {
-                    let res = migrator.migrate_files_with_schema(
+                    let res = FileMigrator::migrate_files_with_schema(
+                        base_url,
+                        Some(admin_url),
+                        &migration_dir,
+                        &view_name,
                         &target,
                         schema_file,
                         migrate_files,
@@ -190,7 +216,11 @@ impl MigrateArgs {
                     Ok(res)
                 },
                 None => {
-                    let res = migrator.migrate_files(
+                    let res = FileMigrator::migrate_files(
+                        base_url,
+                        Some(admin_url),
+                        &migration_dir,
+                        &view_name,
                         &target,
                         migrate_files,
                     ).await?;

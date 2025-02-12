@@ -2,8 +2,6 @@ use sqlx::Database;
 
 use super::{managed::ManagedDb, url::DbUrl};
 
-pub mod pg;
-
 /// A ManagerDb is responsible for creating and destroying databases
 pub trait ManagerDb<D: Database, T: ManagedDb<D>> {
     /// Create a new database. Will return an error if the database already exists

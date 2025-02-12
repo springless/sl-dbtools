@@ -1,3 +1,5 @@
+/// Utility functions for the creation and deletion of databases
+
 use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, Error, Executor};
 
 /// Attempts to guess the name of the maintenance database. It is theoretically possible
