@@ -52,6 +52,31 @@ pub trait MakeNewConnectOpts {
     fn make_new_connection_default(&self, name: Option<&str>) -> Self;
 }
 
+/// Options for automatically generating a new name, so certain elements can be
+/// omitted or included without having to explicitly create a new Uuid or timestamp
+pub struct DbNamingOpts {
+    pub with_uuid: bool,
+    pub with_time: bool,
+    pub name: Option<String>,
+    pub base: Option<String>,
+    pub keep_full: bool,
+}
+
+impl DbNamingOpts {
+    pub fn build(self) -> DbNamingProps {
+        let base = if let Some(base) = self.base {
+            base
+        } else { "temp".to_owned() };
+        DbNamingProps {
+            base,
+            name: self.name,
+            time: if self.with_time { Some(Utc::now()) } else { None },
+            uuid: if self.with_uuid { Some(Uuid::new_v4()) } else { None },
+            keep_full: self.keep_full,
+        }
+    }
+}
+
 impl DbNamingProps {
     /// Creates a new database name utilizing the default configuration, which is
     /// including a timestamp, a uuid, and truncating the full name if it is over
@@ -69,6 +94,11 @@ impl DbNamingProps {
             uuid: Some(Uuid::new_v4()),
             keep_full: false,
         }
+    }
+
+    /// Creates a new DbNamingProps instance from a DbNamingOpts object
+    pub fn new_from_opts(opts: DbNamingOpts) -> Self {
+        opts.build()
     }
 }
 

@@ -49,6 +49,21 @@ impl ManagedDb<Postgres> for PgManagedDb {
         Ok(())
     }
 
+    async fn seed_all<S: AsRef<Seed>, I: IntoIterator<Item=S>>(&self, seeds: I) -> Result<(), sqlx::Error> {
+        let conn = PgPoolOptions::new()
+            .connect_with(self.conn_opts.clone())
+            .await?;
+        let mut tx = conn.begin().await?;
+        for seed in seeds {
+            let raw_sql = seed.as_ref().raw_sql().await?;
+            sqlx::raw_sql(&raw_sql)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     async fn drop(self) -> Result<(), sqlx::Error> {
         util::create::force_drop_database(
             &self.conn_opts(),

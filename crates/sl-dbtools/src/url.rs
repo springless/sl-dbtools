@@ -3,6 +3,8 @@ use std::ops::{Deref, DerefMut};
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 use url::{ParseError, Url};
 
+use crate::namer::DbNamingOpts;
+
 use super::namer::{DbNamingProps, ToDbId};
 
 /// Some utility functions and traits for dealing with connection URLs
@@ -64,10 +66,27 @@ impl DbUrl {
         new_conn
     }
 
-    /// Creates a new transient database connection string
+    /// Creates a new transient database connection string using the default
+    /// configuration
     pub fn new_default_transient_url(&self, name: Option<&str>) -> Self {
         let base = self.dbname();
         let new_name = DbNamingProps::new_default(base, name)
+            .to_db_id();
+        let mut new_url = self.clone();
+        new_url.set_dbname(&new_name);
+        new_url
+    }
+
+    /// Creates a new transient database connection string
+    pub fn new_temp_url(
+        &self,
+        opts: DbNamingOpts,
+    ) -> Self {
+        let new_name = DbNamingOpts {
+            base: if let Some(base) = opts.base { Some(base) } else { Some(self.dbname().to_owned()) },
+            ..opts
+        }
+            .build()
             .to_db_id();
         let mut new_url = self.clone();
         new_url.set_dbname(&new_name);
