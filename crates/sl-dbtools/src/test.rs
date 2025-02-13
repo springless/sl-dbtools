@@ -17,7 +17,7 @@ use crate::{
 /// Utility functions for managing test databases
 
 pub fn setup_env() {
-    dotenv::from_path("./.test.env").ok();
+    dotenv::from_filename(".test.env").ok();
 }
 
 pub struct TestEnv {
@@ -30,8 +30,8 @@ pub struct TestEnv {
 impl TestEnv {
     fn new_from_env() -> Self {
         setup_env();
-        let seed_dir_str = std::env::var("SEED_DIR").expect("Set SEED_DIR in the environment");
-        let seed_dir = Path::new(&seed_dir_str).to_owned();
+        let seed_dir_str = "../../tests/seeds";
+        let seed_dir = Path::new(seed_dir_str).to_owned();
         if !seed_dir.exists() {
             error!("Warning: provided SEED_DIR path does not exist: {:?}", seed_dir);
         }

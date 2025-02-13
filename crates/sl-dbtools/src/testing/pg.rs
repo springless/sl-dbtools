@@ -71,7 +71,7 @@ impl PgTestEnv {
     /// variables.
     pub fn new_from_env_file<P: AsRef<Path>>(env_file: Option<P>) -> Self {
         if let Some(path) = env_file {
-            dotenv::from_path(path.as_ref()).ok();
+            dotenv::from_filename(path.as_ref()).ok();
         }
         PgTestEnv {
             base_url: DbUrl::parse(
@@ -86,7 +86,7 @@ impl PgTestEnv {
     /// Creates a new PgTestEnv like `new_from_env_file` but passing `.env` as the default
     /// environment file
     pub fn new_from_env() -> Self {
-        Self::new_from_env_file(Some("./.env"))
+        Self::new_from_env_file(Some(".env"))
     }
 
     pub async fn new_pg_db(
