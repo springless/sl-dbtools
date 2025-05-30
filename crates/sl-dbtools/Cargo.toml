@@ -16,7 +16,7 @@ dotenv = "0.15.0"
 insta = { version = "1.41.1", features = ["yaml", "redactions"] }
 log = "0.4.25"
 md5 = "0.7.0"
-sqlx = { version = "0.8.2", features = ["runtime-tokio", "any", "sqlite", "postgres"] }
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "any", "sqlite", "postgres", "tls-native-tls"] }
 thiserror = "1.0.66"
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
 url = "2.5.2"
