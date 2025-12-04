@@ -92,12 +92,26 @@ pub fn dump_db<W: Write>(
     }
 }
 
-/// Checks a line to see whether or not it should be output to the dump file. Strips
-/// out any comments and `SET` commands, since the `SET` commands can cause issues
-/// loading the files later based on transaction timeouts and similar configuration
-/// options that aren't really necessary as part of the schema dump.
-///
 /// Returns `true` if the line should be kept, `false` otherwise.
+///
+/// Checks a line to see whether or not it should be output to the dump file. Strips
+/// out any comments and most `SET` commands, since some of the timing and lock settings
+/// can cause problems when re-loading a file in different contexts. Other `SET` commands
+/// such as `SET check_function_bodies` DO need to be kept in order to ensure the file
+/// can still be reloaded correctly later.
 fn keep_dump_line(line: &str) -> bool {
-    !(line.starts_with("SET") || line.starts_with("--"))
+    !(
+    line.starts_with("--")
+    || (
+    line.starts_with("SET")
+    && !(
+    // keep these `SET` statements to ensure loading the file back
+    // remains more or less the same
+    line.starts_with("SET client_encoding")
+    || line.starts_with("SET standard_conforming_strings")
+    || line.starts_with("SET xmloption")
+    || line.starts_with("SET check_function_bodies")
+)
+)
+)
 }
