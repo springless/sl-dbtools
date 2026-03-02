@@ -3,6 +3,16 @@ name = "sl-dbtools"
 version = "0.1.0"
 edition = "2021"
 
+description = "Lightweight database migration utility"
+license = "MIT"
+repository = "https://github.com/springless/sl-dbtools"
+homepage = "https://github.com/springless/sl-dbtools"
+readme = "../../README.md"
+
+authors = ["cogs <cogs@springless.com>"]
+keywords = ["database", "migration", "postgres", "sql"]
+categories = ["database", "development-tools"]
+
 [[bin]]
 name = "sldb"
 path = "src/main.rs"
