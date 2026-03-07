@@ -1,15 +1,24 @@
+use std::path::PathBuf;
+
 use clap::Args;
 use log::info;
 
 use crate::{
     db::pg::{
+        managed::PgManagedDb,
+        manager::PgManagerDb,
         migrate::PgMigrationManager,
         util::file::FileMigrator,
+    },
+    managed::{
+        ManagedDb,
+        Seed,
     },
     migrate::{
         manager::MigrationManager,
         version::TargetVersion,
-    }
+    },
+    manager::ManagerDb,
 };
 
 use super::{SlArgs, error::CliError};
@@ -104,7 +113,7 @@ pub struct MigrateArgs {
 
     /// (Proposed) Specify a directory of files that comprise the schema
     ///
-    /// PROPOSED:
+    /// PROPOSED, NOT CURRENTLY IMPLEMENTED:
     /// Postgres-focused flag which indicates that the migration directory is actually
     /// comprised of multiple subdirectories, each of which handle the migrations for
     /// that specific schema. For example, `migrationdir/public` will run migrations on
@@ -146,6 +155,22 @@ pub struct MigrateArgs {
     /// end of the process. Only one schema file can be provided.
     #[arg(short='S', long)]
     pub schema_file: Option<String>,
+
+    /// Drop and create the database
+    ///
+    /// This will cause the database to be dropped prior to running migrations (meaning
+    /// it will always only run `up` migrations). It will also run a `ROOT.sql` file in
+    /// the migration folder -- if it exists -- prior to running the rest of the migrations.
+    #[arg(short='R', long)]
+    pub remake: bool,
+
+    /// Create the database if it does not exist
+    ///
+    /// If the database already exists then will take no action, but if the database does
+    /// not yet exist then it will create it and run a `ROOT.sql` file in the migration folder,
+    /// -- if it exists -- prior to running the rest of the migrations.
+    #[arg(short, long)]
+    pub ensure: bool,
 }
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
@@ -234,9 +259,36 @@ impl MigrateArgs {
 
     /// Migration being performed on the live database
     async fn migrate_db(&self, args: &SlArgs) -> anyhow::Result<()> {
+        let db_url = args.get_url()?;
+
+        if self.ensure || self.remake {
+            let manager_url = args.get_admin_url()?;
+            let manager = PgManagerDb::new(manager_url.clone())?;
+            if self.remake {
+                info!("Remake set; dropping database");
+                // first destroy the database
+                let managed = PgManagedDb::new(db_url.clone(), Some(manager_url.clone()))?;
+                managed.drop().await?;
+                info!("...Dropped");
+            }
+            info!("Ensuring database exists");
+            // Now make sure it exists
+            let managed = manager.ensure(&db_url).await?;
+            // if `ROOT.sql` exists in the migrations folder, run that prior to the
+            // rest of the migrations if we have just created the database
+            let root_seed_file = {
+                let candidate = PathBuf::from(self.get_migration_dir()?).join("ROOT.sql");
+                candidate.exists().then_some(candidate)
+            };
+            if let Some(fname) = root_seed_file {
+                let seed = Seed::File(fname);
+                managed.seed(seed).await?;
+            }
+        }
+
         let mut manager = PgMigrationManager::new(
             &self.get_migration_dir()?,
-            args.get_url()?,
+            db_url,
             &self.get_view_name(),
         ).await?;
 
