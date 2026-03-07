@@ -152,7 +152,9 @@ pub struct MigrateArgs {
     /// If this flag is provided along with `--file` flags, then the files passed in those
     /// flags will be assumed to be data-only, and this schema will be loaded prior to each
     /// and before running the migrations. This file will be the last thing migrated at the
-    /// end of the process. Only one schema file can be provided.
+    /// end of the process. Only one schema file can be provided. If the filname passed is
+    /// `HEAD`, then it will locate or operate on a `HEAD.sql` file located in the migration
+    /// path.
     #[arg(short='S', long)]
     pub schema_file: Option<String>,
 
@@ -228,8 +230,18 @@ impl MigrateArgs {
             let view_name = self.get_view_name();
 
             match &self.schema_file {
-                Some(schema_file) => {
-                    let res = FileMigrator::migrate_files_with_schema(
+                Some(schema_file_passed) => {
+                    let schema_file = if schema_file_passed == "HEAD" {
+                        let candidate = PathBuf::from(&migration_dir).join("HEAD.sql");
+                        if candidate.exists() {
+                            Ok(candidate)
+                        } else {
+                            Err(CliError::InvalidArg(format!("Could not find HEAD.sql in {}", &migration_dir)))
+                        }?
+                    } else {
+                        PathBuf::from(schema_file_passed)
+                    };
+                    FileMigrator::migrate_files_with_schema(
                         base_url,
                         Some(admin_url),
                         &migration_dir,
@@ -238,10 +250,10 @@ impl MigrateArgs {
                         schema_file,
                         migrate_files,
                     ).await?;
-                    Ok(res)
+                    Ok(())
                 },
                 None => {
-                    let res = FileMigrator::migrate_files(
+                    FileMigrator::migrate_files(
                         base_url,
                         Some(admin_url),
                         &migration_dir,
@@ -249,7 +261,7 @@ impl MigrateArgs {
                         &target,
                         migrate_files,
                     ).await?;
-                    Ok(res)
+                    Ok(())
                 },
             }
         } else {
