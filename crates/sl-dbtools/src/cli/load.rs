@@ -1,6 +1,18 @@
 use clap::Args;
 use log::info;
-use crate::{cli::error::CliError, db::pg::{managed::PgManagedDb, manager::PgManagerDb}, managed::{ManagedDb, Seed}, manager::ManagerDb, namer::DbNamingOpts};
+use crate::{
+    cli::error::CliError,
+    db::pg::{
+        managed::PgManagedDb,
+        manager::PgManagerDb,
+    },
+    managed::{
+        ManagedDb,
+        Seed,
+    },
+    manager::ManagerDb,
+    namer::DbNamingOpts,
+};
 
 use super::SlArgs;
 
@@ -59,7 +71,7 @@ impl LoadArgs {
             })
         } else { db_url };
 
-        if self.seed.len() <= 0 {
+        if self.seed.is_empty() {
             return Err(CliError::InvalidArg("No seed files passed".into()))?;
         }
 
@@ -74,7 +86,7 @@ impl LoadArgs {
                 info!("Remake set; dropping database");
                 // first destroy the database
                 let managed = PgManagedDb::new(db_url.clone(), Some(manager_url.clone()))?;
-                let _ = managed.drop().await?;
+                managed.drop().await?;
                 info!("...Dropped");
             }
             info!("Ensuring database exists");
@@ -85,8 +97,7 @@ impl LoadArgs {
             info!("Not ensuring database");
             // We're just going to create the managed database and hope for the
             // best
-            let managed = PgManagedDb::new(db_url.clone(), Some(manager_url.clone()))?;
-            managed
+            PgManagedDb::new(db_url.clone(), Some(manager_url.clone()))?
         };
 
         info!("Seeding database");
