@@ -64,16 +64,11 @@ order in which to run the migrations.
 
 ### Collapsing migrations
 
-If the migrations folder is getting too cluttered and you would like to clean it up by setting
-a new baseline initial migration, you can manually combine migrations, or just change the first
-file to a full schema dump. The only file you CANNOT rename without consequence is the
-current schema version for the database being migrated.
+Files that do not end with `.up.sql` or `.dn.sql` are ignored, so a simple way to collapse
+migrations is to make a no-op up migration, output a version of the current schema, save it
+in the migrations folder as `ROOT.sql`, and then delete the rest of the migrations.
 
-So if you are, for example, trying to combine the existing schema into a single file as a new
-baseline, you have a few options:
-
-#### Create a no-op `up` migration
-Let's say that you have this migration folder:
+So given:
 
 ```
 - 01-create-user-table.up.sql
@@ -82,24 +77,41 @@ Let's say that you have this migration folder:
 - 04-remove-password.up.sql
 ```
 
-And you are currentlty on `04-remove-password`. You could create a new empty up migration,
-called `05-baseline`:
+Create a blank file (or just include a comment explaining it's a re-baseline):
 
 ```
 - 01-create-user-table.up.sql
 - 02-update-user-table.up.sql
 - 03-clear-password.up.sql
 - 04-remove-password.up.sql
-- 05-baseline.up.sql
+- 05-new-baseline.up.sql
 ```
 
-Perform the migration on **all** managed databases, and then change the contents of
-`05-baseline.up.sql` to be the full schema dump. After that point, you could remove the
-rest of the preceding files, leaving you with only:
+Migrate to that version, and then dump the entire schema into `ROOT.sql`. This will give you:
 
 ```
-- 05-baseline.up.sql
+- 01-create-user-table.up.sql
+- 02-update-user-table.up.sql
+- 03-clear-password.up.sql
+- 04-remove-password.up.sql
+- 05-new-baseline.up.sql
+- ROOT.sql
 ```
+
+You can then delete the old migrations, leaving you with:
+
+```
+- 05-new-baseline.up.sql
+- ROOT.sql
+```
+
+Anytime you create a new database, just make sure `ROOT.sql` is the first seed file run.
+`sldb` already does this by default. Additionally, at this point if you migrate to the
+`ROOT` target, the only action that will be taken is to remove the view tracking the
+schema version.
+
+As with any migration system, make sure to get all databases using the migrations onto the
+new baseline prior to removing the migrations preceding it.
 
 #### Manually changing version
 
@@ -111,10 +123,6 @@ you wanted to rename your schema version to `00-initial-schema`:
 CREATE OR REPLACE VIEW _schema_version AS
 SELECT '00-initial-schema'::TEXT AS version;
 ```
-
-The thing to be aware of with all of these, however, is that if you are trying to keep
-multiple databases in sync then just make sure to get all of them onto the same version number
-prior to attempting to re-baseline, as is the case with any migration system.
 
 ## Why No Schema Change Detection
 
