@@ -66,10 +66,10 @@ Targets can be one of `HEAD`, `ROOT`, `@`, or a full or partial version name. Af
 | `03`                   | `03-clear-password`    |
 | `rem`                  | `04-remove-password`   |
 
-There are also two reserved filenames, predictably `ROOT.sql` and `HEAD.sql`. These are not directly used by the core of the migration system and do not need to be included (meaning they will not be run if included in the migration folder) but can be used to store both the database schema prior to any migratios (`ROOT.sql`) and the database at the end of the migration chain (`HEAD.sql`). There are only two instances where these files are utilized:
+There are also two reserved filenames, which are predictably `ROOT.sql` and `HEAD.sql`. These are not directly used by the core of the migration system and do not need to be included (meaning they will not be run if included in the migration folder) but can be used to store both the database schema prior to any migrations (`ROOT.sql`) and the final database at the end of the migration chain (`HEAD.sql`). There are only two instances where these files are utilized:
 
-1. `ROOT.sql` will be run as the first file after creating the database when you tell the migration runner to migrate from a new database. It is not referenced at all when migrating to `ROOT`. If this file is not in the migration folder, then it just runs the first `up` migration on an empty database.
-2. `HEAD.sql` will be written to when you ask the the `sldb dump` command to dump or migrate the schema without providing a file argument. It is also not referenced at all when migrating to `HEAD`.
+1. `ROOT.sql` is not referenced at all when migrating to `ROOT`. But it will be run as the first seed file after creating a new database when performing an `ensure` or `remake` migration command. If `ROOT.sql` is not in the migration folder then it just runs the first `up` migration on an empty database.
+2. `HEAD.sql` is also not referenced at all when migrating to `HEAD`. But it will be written to when running `sldb migrate -S HEAD <target>` (the `HEAD` in that command is a keyword and stands in place of the filename for the schema file, so if you want to migrate the `HEAD.sql` file to the `HEAD` version, you would call `sldb migrate -S HEAD HEAD`). If `HEAD.sql` does not yet exist in the migration folder then it will either start from `ROOT.sql`, or if that does not exist it will start from an empty database and migrate as normal.
 
 Besides those cases these files are ignored entirely by the migration system.
 
