@@ -233,11 +233,22 @@ impl MigrateArgs {
                 Some(schema_file_passed) => {
                     let schema_file = if schema_file_passed == "HEAD" {
                         let candidate = PathBuf::from(&migration_dir).join("HEAD.sql");
-                        if candidate.exists() {
-                            Ok(candidate)
-                        } else {
-                            Err(CliError::InvalidArg(format!("Could not find HEAD.sql in {}", &migration_dir)))
-                        }?
+                        if !candidate.exists() {
+                            // no `HEAD.sql` file exists, so we will either copy the `ROOT.sql`
+                            // file into its place if that exists, or make an empty file if
+                            // `ROOT.sql` does not exist to ensure the database has a
+                            // starting point.
+                            let root_seed_file = {
+                                let candidate = PathBuf::from(self.get_migration_dir()?).join("ROOT.sql");
+                                candidate.exists().then_some(candidate)
+                            };
+                            if let Some(fname) = root_seed_file {
+                                std::fs::copy(&fname, &candidate)?;
+                            } else {
+                                std::fs::File::create(&candidate)?;
+                            }
+                        }
+                        candidate
                     } else {
                         PathBuf::from(schema_file_passed)
                     };
