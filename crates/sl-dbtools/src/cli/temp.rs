@@ -1,6 +1,8 @@
 use clap::{Args, Subcommand};
 use log::info;
 
+use crate::db::pg::temp::{Initial, PgTempDbBuilder};
+
 use super::SlArgs;
 
 /// Make a new temporary database
@@ -66,9 +68,13 @@ pub struct TempCreate {
 /// the database it created, and this just provides a quick utility to remove them.
 #[derive(Args, Debug, Clone)]
 pub struct TempClean {
-    /// Do not confirm prior to removing temp databases
+    /// Auto-confirm cleanup
     #[arg(short, long)]
     pub yes: bool,
+    /// Regex pattern that identifies a temporary database
+    ///
+    /// If not provided, it will look for a `TEMPORARY_DATABASE_REGEX` in the environment
+    pub regex: Option<String>
 }
 
 /// View the current temporary databases that exist on the server
@@ -104,13 +110,21 @@ pub struct TempArgs {
 }
 
 impl TempArgs {
-    pub fn run(&self, _args: &SlArgs) -> anyhow::Result<()> {
+    pub async fn run(&self, args: &SlArgs) -> anyhow::Result<()> {
         match &self.command {
             TempCommand::Clean(_sub_args) => {
                 info!("Cleaning...");
             },
             TempCommand::Create(_sub_args) => {
                 info!("Creating...");
+                let temp_builder = PgTempDbBuilder::new(
+                    &args.get_url()?,
+                    &Some(args.get_admin_url()?),
+                    Initial::Empty,
+                    args.get_temp_db_pattern(),
+                )?;
+                let created_db = temp_builder.build().await?;
+                info!("Created Temp Database: {:?}", created_db.url().as_str());
             },
             TempCommand::List(_sub_args) => {
                 info!("Listing...");

@@ -1,19 +1,26 @@
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
+const DEFAULT_NAME_PATTERN: &str = "z{timestamp}_{base}_{name}";
+
+#[derive(Debug, Clone)]
+pub enum DbNamingTemplate {
+    /// Use the default naming pattern (`z{timestamp}_{base}_{name}`)
+    Default,
+    /// Specify a custom naming pattern. See `DbNamingProps` for more details
+    Pattern(String),
+}
+
 /// This describes the values used to generate a new name for a database starting from a
 /// base name. The example and original use case for this is constructing slightly random
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
 /// use sl_dbtools::namer::DbNamingProps;
-/// use chrono::{DateTime, Utc, TimeZone};
-/// use uuid::uuid;
 /// let props = DbNamingProps {
 ///     base: "my_project".into(),
-///     time: Some(Utc.with_ymd_and_hms(2024, 10, 17, 20, 38, 14).unwrap()),
-///     uuid: Some(uuid!("3a45686d-8213-48b3-b817-7e28c80f6e71")),
 ///     name: Some("my_test".into()),
+///     pattern: Pattern("{timestamp}_{base}_{name}_{uuid}".into()),
 ///     keep_full: true,
 /// };
 /// ```
@@ -36,13 +43,111 @@ use chrono::{DateTime, Utc};
 ///
 /// It will do this for all database types, regardless whether it holds the same restrictions
 /// as Postgres, unless `keep_full` is set to `true`.
+///
+/// The available pattern variables are:
+///
+/// - `base` - The base name of the database, taken from the `DATABASE_URL` connection
+/// - `name` - An extra name appended to the database, typically used to identify what
+/// - `timestamp` - A timestamp string in the format: `YYYYmmddHHMMSS`
+///   test or specific reason the database exists to serve
+/// - 'uuid' - A randomly generated UUID
+///
+/// Any characters outside of curly braces will be interpreted literally.
 pub struct DbNamingProps {
+    pub pattern: DbNamingTemplate,
     pub base: String,
-    pub time: Option<DateTime<Utc>>,
     pub name: Option<String>,
-    pub uuid: Option<Uuid>,
     pub keep_full: bool,
 }
+
+impl DbNamingProps {
+    /// Creates a new database name utilizing the default configuration, which is
+    /// including a timestamp, a uuid, and truncating the full name if it is over
+    /// the character limit. The timestamp is generated at the time of calling
+    /// this function, and the UUID is random.
+    pub fn new_default<T: AsRef<str>>(base: T, name: Option<T>) -> Self {
+        let this_name = name.map(|v| v.as_ref().to_string());
+        DbNamingProps {
+            pattern: DbNamingTemplate::Default,
+            base: base.as_ref().into(),
+            name: this_name,
+            keep_full: false,
+        }
+    }
+
+    /// Creates a new DbNamingProps instance from a DbNamingOpts object
+    pub fn new_from_opts(opts: DbNamingOpts) -> Self {
+        opts.build()
+    }
+}
+
+impl ToDbId for DbNamingProps {
+    fn to_db_id(&self) -> String {
+        let pattern = match &self.pattern {
+            DbNamingTemplate::Default => DEFAULT_NAME_PATTERN,
+            DbNamingTemplate::Pattern(p) => p.as_str(),
+        };
+
+        let timestamp = pattern
+            .contains("{timestamp}")
+            .then(Utc::now);
+
+        let uuid = pattern
+            .contains("{uuid}")
+            .then(Uuid::new_v4);
+
+        let result = interpolate_db_name(
+            pattern,
+            &self.base,
+            self.name.as_deref(),
+            timestamp,
+            uuid,
+        );
+
+        if self.keep_full {
+            result
+        } else {
+            truncate_identifier(result)
+        }
+    }
+}
+
+fn interpolate_db_name(
+    pattern: &str,
+    base: &str,
+    name: Option<&str>,
+    timestamp: Option<chrono::DateTime<Utc>>,
+    uuid: Option<Uuid>,
+) -> String {
+    let timestamp_str = timestamp.map(|ts| ts.to_db_id());
+    let uuid_str = uuid.map(|uuid| uuid.to_db_id());
+    let raw = pattern
+        .replace("{base}", base)
+        .replace("{name}", name.unwrap_or(""))
+        .replace("{timestamp}", timestamp_str.as_deref().unwrap_or(""))
+        .replace("{uuid}", uuid_str.as_deref().unwrap_or(""));
+
+    // Collapse runs of underscores left behind by missing optional values.
+    // Starting with prev=true also eats any leading underscore.
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_underscore = true;
+    for ch in raw.chars() {
+        if ch == '_' {
+            if !prev_underscore {
+                out.push(ch);
+                prev_underscore = true;
+            }
+        } else {
+            out.push(ch);
+            prev_underscore = false;
+        }
+    }
+    if out.ends_with('_') {
+        out.pop();
+    }
+    out
+}
+
 
 // When called, an implementor of this trait should be able to generate a new version
 // of itself, but incorporating the provided "name" into the new database version, and
@@ -55,10 +160,9 @@ pub trait MakeNewConnectOpts {
 /// Options for automatically generating a new name, so certain elements can be
 /// omitted or included without having to explicitly create a new Uuid or timestamp
 pub struct DbNamingOpts {
-    pub with_uuid: bool,
-    pub with_time: bool,
-    pub name: Option<String>,
+    pub pattern: DbNamingTemplate,
     pub base: Option<String>,
+    pub name: Option<String>,
     pub keep_full: bool,
 }
 
@@ -70,35 +174,9 @@ impl DbNamingOpts {
         DbNamingProps {
             base,
             name: self.name,
-            time: if self.with_time { Some(Utc::now()) } else { None },
-            uuid: if self.with_uuid { Some(Uuid::new_v4()) } else { None },
+            pattern: self.pattern,
             keep_full: self.keep_full,
         }
-    }
-}
-
-impl DbNamingProps {
-    /// Creates a new database name utilizing the default configuration, which is
-    /// including a timestamp, a uuid, and truncating the full name if it is over
-    /// the character limit. The timestamp is generated at the time of calling
-    /// this function, and the UUID is random.
-    pub fn new_default<T: AsRef<str>>(base: T, name: Option<T>) -> Self {
-        let this_name = match name {
-            Some(v) => Some(v.as_ref().to_string()),
-            None => None,
-        };
-        DbNamingProps {
-            base: base.as_ref().into(),
-            name: this_name,
-            time: Some(Utc::now()),
-            uuid: Some(Uuid::new_v4()),
-            keep_full: false,
-        }
-    }
-
-    /// Creates a new DbNamingProps instance from a DbNamingOpts object
-    pub fn new_from_opts(opts: DbNamingOpts) -> Self {
-        opts.build()
     }
 }
 
@@ -176,31 +254,6 @@ impl ToDbId for Uuid {
     }
 }
 
-impl ToDbId for DbNamingProps {
-    fn to_db_id(&self) -> String {
-        let mut parts: Vec<String> = Vec::new();
-
-        if let Some(part) = self.time {
-            parts.push(part.to_db_id());
-        }
-        parts.push(self.base.to_string());
-        if let Some(part) = &self.name {
-            parts.push(part.to_string());
-        }
-        if let Some(part) = self.uuid {
-            parts.push(part.to_db_id());
-        }
-
-        let combined = parts.join("_");
-
-        if self.keep_full {
-            combined
-        } else {
-            truncate_identifier(combined)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests_truncate_identifier {
     use super::*;
@@ -241,6 +294,11 @@ mod tests_to_db_id {
 
     use super::*;
 
+    fn ts() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2024, 10, 17, 20, 38, 14).unwrap()
+    }
+    const UUID: Uuid = uuid!("3a45686d-8213-48b3-b817-7e28c80f6e71");
+
     #[test]
     fn test_datetime_to_db_id() {
         assert_eq!(
@@ -260,90 +318,100 @@ mod tests_to_db_id {
     }
 
     #[test]
-    fn test_dbnamingprops_to_db_id() {
-        let timestamp = Utc.with_ymd_and_hms(2024, 10, 17, 20, 38, 14).unwrap();
-        let this_uuid = uuid!("3a45686d-8213-48b3-b817-7e28c80f6e71");
+    fn test_interpolate_all_present() {
         assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: Some("my_test".into()),
-                time: Some(timestamp),
-                uuid: Some(this_uuid),
-                keep_full: false,
-            }.to_db_id(),
-            "20241017203814_my_project_my_test_3a45686d_8213_48b3_b81118c",
-        );
-        assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: Some("my_test".into()),
-                time: Some(timestamp),
-                uuid: Some(this_uuid),
-                keep_full: true,
-            }.to_db_id(),
+            interpolate_db_name(
+                "{timestamp}_{base}_{name}_{uuid}",
+                "my_project", Some("my_test"), Some(ts()), Some(UUID),
+            ),
             "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
         );
+    }
+
+    #[test]
+    fn test_interpolate_no_name() {
         assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: None,
-                time: None,
-                uuid: None,
-                keep_full: false,
-            }.to_db_id(),
+            interpolate_db_name(
+                "{timestamp}_{base}_{name}_{uuid}",
+                "my_project", None, Some(ts()), Some(UUID),
+            ),
+            "20241017203814_my_project_3a45686d_8213_48b3_b817_7e28c80f6e71",
+        );
+    }
+
+    #[test]
+    fn test_interpolate_no_timestamp() {
+        assert_eq!(
+            interpolate_db_name(
+                "{timestamp}_{base}_{name}_{uuid}",
+                "my_project", Some("my_test"), None, Some(UUID),
+            ),
+            "my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
+        );
+    }
+
+    #[test]
+    fn test_interpolate_no_uuid() {
+        assert_eq!(
+            interpolate_db_name(
+                "{timestamp}_{base}_{name}_{uuid}",
+                "my_project", Some("my_test"), Some(ts()), None,
+            ),
+            "20241017203814_my_project_my_test",
+        );
+    }
+
+    #[test]
+    fn test_interpolate_base_only() {
+        assert_eq!(
+            interpolate_db_name(
+                "{timestamp}_{base}_{name}_{uuid}",
+                "my_project", None, None, None,
+            ),
             "my_project",
         );
+    }
+
+    #[test]
+    fn test_interpolate_default_pattern() {
         assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: Some("my_test".into()),
-                time: None,
-                uuid: None,
-                keep_full: false,
-            }.to_db_id(),
-            "my_project_my_test",
+            interpolate_db_name(DEFAULT_NAME_PATTERN, "my_project", Some("my_test"), Some(ts()), None),
+            "z20241017203814_my_project_my_test",
         );
+    }
+
+    #[test]
+    fn test_interpolate_default_pattern_no_name() {
         assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: None,
-                time: Some(timestamp),
-                uuid: None,
-                keep_full: false,
-            }.to_db_id(),
-            "20241017203814_my_project",
+            interpolate_db_name(DEFAULT_NAME_PATTERN, "my_project", None, Some(ts()), None),
+            "z20241017203814_my_project",
         );
-        assert_eq!(
-            DbNamingProps {
-                base: "my_project".into(),
-                name: None,
-                time: None,
-                uuid: Some(this_uuid),
-                keep_full: false,
-            }.to_db_id(),
-            "my_project_3a45686d_8213_48b3_b817_7e28c80f6e71",
-        );
+    }
+
+    #[test]
+    fn test_dbnamingprops_to_db_id_smoke() {
+        let result = DbNamingProps {
+            pattern: DbNamingTemplate::Default,
+            base: "my_project".into(),
+            name: Some("my_test".into()),
+            keep_full: false,
+        }.to_db_id();
+        assert!(!result.contains('{'), "unresolved placeholder in output");
+        assert!(result.starts_with('z'));
+        assert!(result.contains("my_project"));
+        assert!(result.len() <= 63);
     }
 }
 
 #[cfg(test)]
 mod tests_dbnamingprops {
     use super::*;
-    use chrono::Duration;
 
     #[test]
     fn test_new_default() {
         let props = DbNamingProps::new_default("my_db", Some("my_test"));
-        let now = Utc::now();
-
         assert_eq!(props.base, "my_db");
         assert_eq!(props.name, Some("my_test".into()));
-        assert!(props.time.is_some());
-        // should be recent
-        let time_diff = now.signed_duration_since(props.time.unwrap());
-        assert!(time_diff < Duration::seconds(1), "Should be recent");
-        assert!(props.uuid.is_some());
-        assert!(Uuid::parse_str(&props.uuid.unwrap().to_string()).is_ok(), "UUID should be valid");
-        assert!(!props.keep_full, "`keep_full` should be `false` by default");
+        assert!(!props.keep_full);
     }
 }

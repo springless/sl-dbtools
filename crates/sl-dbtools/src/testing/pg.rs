@@ -1,14 +1,12 @@
 use std::path::Path;
 
 use crate::{
-    managed::Seed,
     db::pg::{
         managed::PgManagedDb,
         temp::{
             Initial, PgTempDbBuilder,
         }
-    },
-    url::DbUrl
+    }, managed::Seed, namer::DbNamingTemplate, url::DbUrl
 };
 
 /// Convenience wrapper for a struct that can quickly create managed
@@ -57,6 +55,7 @@ use crate::{
 pub struct PgTestEnv {
     pub base_url: DbUrl,
     pub admin_url: Option<DbUrl>,
+    pub temp_database_pattern: DbNamingTemplate,
 }
 
 impl PgTestEnv {
@@ -80,6 +79,9 @@ impl PgTestEnv {
             admin_url: std::env::var("DATABASE_ADMIN_URL")
                 .ok()
                 .map(|url| DbUrl::parse(&url).expect("DATABASE_ADMIN_URL is provided but invalid")),
+            temp_database_pattern: std::env::var("TEMP_DATABASE_PATTERN")
+                .map(DbNamingTemplate::Pattern)
+                .unwrap_or(DbNamingTemplate::Default)
         }
     }
 
@@ -99,6 +101,7 @@ impl PgTestEnv {
             &self.base_url,
             &self.admin_url,
             initial,
+            self.temp_database_pattern.to_owned(),
         )
             .expect("Failed to create managed db builder")
             .set_name(test_name.to_owned())

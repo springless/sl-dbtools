@@ -4,14 +4,12 @@ use log::error;
 use sqlx::postgres::PgConnectOptions;
 
 use crate::{
-    managed::Seed,
     db::pg::{
         managed::PgManagedDb,
         temp::{
             Initial, PgTempDbBuilder
         },
-    },
-    url::DbUrl
+    }, managed::Seed, namer::DbNamingTemplate, url::DbUrl
 };
 
 /// Utility functions for managing test databases
@@ -79,6 +77,7 @@ impl TestEnv {
         test_name: &str,
         initial: Initial,
         seeds: Vec<Seed>,
+        pattern: DbNamingTemplate,
     ) -> PgManagedDb {
         // change any `File` seeds to be relative to the SEED_DIR
         let seeds = seeds.into_iter().map(|seed| {
@@ -93,6 +92,7 @@ impl TestEnv {
             &self.postgres_url,
             &self.postgres_admin_url,
             initial,
+            pattern,
         )
             .expect("Failed to create managed db builder")
             .set_name(test_name.to_owned())

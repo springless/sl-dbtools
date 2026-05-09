@@ -5,25 +5,17 @@ use std::{fs::File, io::Write, path::{Path, PathBuf}};
 use log::info;
 
 use crate::{
-    url::DbUrl,
-    managed::{ManagedDb, Seed},
-    migrate::{
-        manager::MigrationManager,
-        version::TargetVersion,
-    },
     db::pg::{
-        migrate::PgMigrationManager,
-        managed::PgManagedDb,
-        temp::{
+        managed::PgManagedDb, migrate::PgMigrationManager, temp::{
             Initial,
             PgTempDbBuilder
-        },
-        util::dump::{
-            dump_db,
-            DumpType,
-        },
-    },
-    error::DbToolsError,
+        }, util::dump::{
+            DumpType, dump_db
+        }
+    }, error::DbToolsError, managed::{ManagedDb, Seed}, migrate::{
+        manager::MigrationManager,
+        version::TargetVersion,
+    }, namer::DbNamingTemplate, url::DbUrl
 };
 
 pub struct FileMigrator {
@@ -59,12 +51,13 @@ impl FileMigrator {
         }
     }
 
-    /// Create the datbase to house this file. Generates a random database name
+    /// Create the database to house this file. Generates a random database name
     async fn create_db(mut self) -> Result<Self, DbToolsError> {
         let db_builder = PgTempDbBuilder::new(
             &self.base_url,
             &Some(self.admin_url.clone()),
             Initial::Empty,
+            DbNamingTemplate::Pattern("zz{timestamp}_file_migrate_{uuid}".to_owned())
         )?;
 
         let db_builder = match &self.file {
