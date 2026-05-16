@@ -1,9 +1,5 @@
 use crate::{
-    url::DbUrl,
-    db::pg::managed::PgManagedDb,
-    managed::{ManagedDb, Seed},
-    manager::ManagerDb,
-    db::pg::manager::PgManagerDb,
+    db::pg::{managed::PgManagedDb, manager::PgManagerDb}, managed::{ManagedDb, Seed}, manager::ManagerDb, namer::{DbNamingOpts, DbNamingTemplate}, url::DbUrl
 };
 
 pub enum Initial {
@@ -20,6 +16,7 @@ pub struct PgTempDbBuilder {
     name: Option<String>,
     initial: Initial,
     seeds: Vec<Seed>,
+    pattern: DbNamingTemplate,
 }
 
 impl PgTempDbBuilder {
@@ -27,6 +24,7 @@ impl PgTempDbBuilder {
         base_url: &DbUrl,
         admin_url: &Option<DbUrl>,
         initial: Initial,
+        pattern: DbNamingTemplate,
     ) -> Result<Self, sqlx::Error> {
         let base_url = base_url.clone();
         // validates that the URL can be parsed to a postgres url
@@ -35,7 +33,7 @@ impl PgTempDbBuilder {
             Some(url) => url.clone(),
             None => base_url.guess_pg_maintenance_url(),
         };
-        // validates that the URL can be parsed to a postgres url
+        // validate that the URL can be parsed to a postgres url
         let _ = admin_url.get_pg_conn_opts()?;
         Ok(PgTempDbBuilder {
             base_url,
@@ -43,6 +41,7 @@ impl PgTempDbBuilder {
             name: None,
             initial,
             seeds: vec![],
+            pattern,
         })
     }
 
@@ -64,7 +63,12 @@ impl PgTempDbBuilder {
     pub async fn build(self) -> Result<PgManagedDb, sqlx::Error> {
         let manager = PgManagerDb::new(self.admin_url)?;
 
-        let managed_url = self.base_url.new_default_transient_url(self.name.as_deref());
+        let managed_url = self.base_url.new_temp_url(DbNamingOpts {
+            pattern: self.pattern,
+            base: None,
+            name: self.name,
+            keep_full: false,
+        });
 
         let managed = if let Initial::Template(template_url) = self.initial {
             manager.create_from_template(&managed_url, &template_url).await
@@ -73,7 +77,7 @@ impl PgTempDbBuilder {
         }?;
 
         for seed in self.seeds {
-            let _ = managed.seed(seed).await?;
+            managed.seed(seed).await?;
         }
 
         Ok(managed)

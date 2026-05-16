@@ -4,14 +4,12 @@ use log::error;
 use sqlx::postgres::PgConnectOptions;
 
 use crate::{
-    managed::Seed,
     db::pg::{
         managed::PgManagedDb,
         temp::{
             Initial, PgTempDbBuilder
         },
-    },
-    url::DbUrl
+    }, managed::Seed, namer::DbNamingTemplate, url::DbUrl
 };
 
 /// Utility functions for managing test databases
@@ -25,6 +23,7 @@ pub struct TestEnv {
     postgres_admin_url: Option<DbUrl>,
     pub sqlite_url: DbUrl,
     seed_dir: PathBuf,
+    pub temp_db_pattern: DbNamingTemplate,
 }
 
 impl TestEnv {
@@ -49,6 +48,10 @@ impl TestEnv {
                 &std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
             ).expect("SQLITE_URL is invalid"),
             seed_dir,
+            temp_db_pattern:
+                std::env::var("TEMP_DATABASE_PATTERN")
+                .map(DbNamingTemplate::Pattern)
+                .unwrap_or(DbNamingTemplate::Default),
         }
     }
 
@@ -79,6 +82,7 @@ impl TestEnv {
         test_name: &str,
         initial: Initial,
         seeds: Vec<Seed>,
+        pattern: DbNamingTemplate,
     ) -> PgManagedDb {
         // change any `File` seeds to be relative to the SEED_DIR
         let seeds = seeds.into_iter().map(|seed| {
@@ -93,6 +97,7 @@ impl TestEnv {
             &self.postgres_url,
             &self.postgres_admin_url,
             initial,
+            pattern,
         )
             .expect("Failed to create managed db builder")
             .set_name(test_name.to_owned())

@@ -1,4 +1,4 @@
-use sqlx::{postgres::PgConnectOptions, Postgres};
+use sqlx::{ConnectOptions, Postgres, Row, postgres::PgConnectOptions};
 use crate::{
     db::pg::{
         managed::PgManagedDb,
@@ -26,9 +26,9 @@ impl PgManagerDb {
         create_owned_database_from_template(
             &url.get_pg_conn_opts()?,
             &template_db.get_pg_conn_opts()?,
-            &self.conn_opts(),
+            self.conn_opts(),
         ).await?;
-        Ok(PgManagedDb::new(url.clone(), Some(self.url.clone()))?)
+        PgManagedDb::new(url.clone(), Some(self.url.clone()))
     }
 
     pub fn conn_opts(&self) -> &PgConnectOptions {
@@ -42,7 +42,7 @@ impl ManagerDb<Postgres, PgManagedDb> for PgManagerDb {
             &url.get_pg_conn_opts()?,
             self.conn_opts(),
         ).await;
-        Ok(PgManagedDb::new(url.clone(), Some(self.url.clone()))?)
+        PgManagedDb::new(url.clone(), Some(self.url.clone()))
     }
 
      async fn exists(&self, url: &DbUrl) -> Result<bool, sqlx::Error> {
@@ -54,7 +54,23 @@ impl ManagerDb<Postgres, PgManagedDb> for PgManagerDb {
         if !exists {
             self.create(url).await
         } else {
-            self.create(url).await
+            PgManagedDb::new(url.clone(), Some(self.url.clone()))
         }
+    }
+
+    async fn find_by_regex(&self, regex: &str) -> Result<Vec<PgManagedDb>, sqlx::Error> {
+        let mut conn = self.conn_opts().connect().await?;
+        let rows = sqlx::query("SELECT datname FROM pg_database WHERE datname ~ $1")
+            .bind(regex)
+            .fetch_all(&mut conn)
+            .await?;
+        rows.iter()
+            .map(|row| {
+                let datname: String = row.try_get("datname")?;
+                let mut url = self.url.clone();
+                url.set_dbname(&datname);
+                PgManagedDb::new(url, Some(self.url.clone()))
+            })
+            .collect()
     }
 }

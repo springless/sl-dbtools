@@ -9,7 +9,7 @@ use migrate::MigrateArgs;
 use sqlx::{postgres::PgConnectOptions, ConnectOptions};
 use temp::TempArgs;
 
-use crate::{url::DbUrl, error::DbToolsError, db::pg::util::create::parse_for_maintenance};
+use crate::{db::pg::util::create::parse_for_maintenance, error::DbToolsError, namer::DbNamingTemplate, url::DbUrl};
 
 //
 // Modules
@@ -86,6 +86,23 @@ pub struct SlArgs {
     /// connection strings, etc.
     #[arg(short, long)]
     verbose: bool,
+
+    /// Set the pattern used to create temporary databases
+    ///
+    /// If not passed this will fall back to the environment variable
+    /// `TEMP_DATABASE_PATTERN`. If That is not provided, will fall back
+    /// to the default pattern: `z{timestamp}_{base}_{name}`
+    #[arg(short = 'T', long)]
+    temp_pattern: Option<String>,
+
+    /// Set the pattern used to identify temporary databases
+    ///
+    /// If not passed this will fall back to the environment variable
+    /// `TEMP_DATABASE_REGEX`. If that is not provided, then it will
+    /// fall back to a best-guess regex based on the temporary
+    /// database pattern.
+    #[arg(short = 'R', long)]
+    temp_regex: Option<String>,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -103,7 +120,7 @@ impl SlSubcommand {
                 sub_args.run(args).await?;
             },
             Self::Temp(sub_args) => {
-                sub_args.run(args)?;
+                sub_args.run(args).await?;
             },
             Self::Dump(sub_args) => {
                 sub_args.run(args).await?;
@@ -119,6 +136,8 @@ impl SlSubcommand {
 /// The name of the environment variable that holds the database url
 const ENV_DATABASE_URL: &str = "DATABASE_URL";
 const ENV_DATABASE_URL_ADMIN: &str = "DATABASE_URL_ADMIN";
+const ENV_TEMP_DATABASE_PATTERN: &str = "TEMP_DATABASE_PATTERN";
+const ENV_TEMP_DATABASE_REGEX: &str = "TEMP_DATABASE_REGEX";
 static LOGGER: SimpleLogger = SimpleLogger;
 
 
@@ -163,6 +182,28 @@ impl SlArgs {
         Ok(admin_url)
     }
 
+    /// Gets the temp database pattern, which will either be provided as a command line argument,
+    /// pulled from the environment, or fall back to a default value
+    pub fn get_temp_db_pattern(&self) -> DbNamingTemplate {
+        if let Some(patt) = &self.temp_pattern {
+            DbNamingTemplate::Pattern(patt.to_owned())
+        } else {
+            std::env::var(ENV_TEMP_DATABASE_PATTERN)
+                .map(DbNamingTemplate::Pattern)
+                .unwrap_or(DbNamingTemplate::Default)
+        }
+    }
+
+    /// Gets the temp database pattern, which will either be provided as a command line argument,
+    /// pulled from the environment, or fall back to a default value
+    pub fn get_temp_db_regex(&self) -> Option<String> {
+        if let Some(regex) = &self.temp_regex {
+            Some(regex.to_owned())
+        } else {
+            std::env::var(ENV_TEMP_DATABASE_REGEX).ok()
+        }
+    }
+
     fn print_config(&self) {
         info!("Main Database:  {}", self.get_url()
             .map(|url| url.to_string())
@@ -179,7 +220,7 @@ impl SlArgs {
         if !self.no_env {
             if let Some(env_files) = &self.env {
                 // If we were passed a `-e` then only read in the ones passed
-                env_files.into_iter().for_each(|fname| { dotenv::from_path(fname).ok(); });
+                env_files.iter().for_each(|fname| { dotenv::from_path(fname).ok(); });
             } else {
                 // otherwise attempt to read the standard `.env` file
                 let _res = dotenv::dotenv().ok();

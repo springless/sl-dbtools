@@ -66,8 +66,8 @@ impl ManagedDb<Postgres> for PgManagedDb {
 
     async fn drop(self) -> Result<(), sqlx::Error> {
         util::create::force_drop_database(
-            &self.conn_opts(),
-            &self.manager.conn_opts(),
+            self.conn_opts(),
+            self.manager.conn_opts(),
         ).await
     }
 }
@@ -88,13 +88,14 @@ mod tests {
             "test_db_create",
             Initial::Empty,
             vec![],
+            TEST_ENV.temp_db_pattern.clone(),
         ).await;
         let conn = PgPoolOptions::new()
             .connect_with(testdb.url().get_pg_conn_opts().unwrap())
             .await;
-        assert!(matches!(conn, Ok(_)));
+        assert!(conn.is_ok());
         let drop = testdb.drop().await;
-        assert!(matches!(drop, Ok(_)));
+        assert!(drop.is_ok());
     }
 
     #[tokio::test]
@@ -105,6 +106,7 @@ mod tests {
             vec![
                 Seed::File("pg/00-test-seed.sql".into()),
             ],
+            TEST_ENV.temp_db_pattern.clone(),
         ).await;
         let conn = PgPoolOptions::new()
             .connect_with(testdb.url().get_pg_conn_opts().unwrap())
@@ -139,6 +141,7 @@ mod tests {
                 ,('02-third-value');
                 "#.to_string()),
             ],
+            TEST_ENV.temp_db_pattern.clone(),
         ).await;
 
         let conn = PgPoolOptions::new()
@@ -174,11 +177,13 @@ mod tests {
                 ,('02-third-value');
                 "#.to_string()),
             ],
+            TEST_ENV.temp_db_pattern.clone(),
         ).await;
         let created_testdb = TEST_ENV.new_pg_db(
             "test_db_create_template_created",
             Initial::Template(template_testdb.url().clone()),
             vec![],
+            TEST_ENV.temp_db_pattern.clone(),
         ).await;
 
         let conn = PgPoolOptions::new()

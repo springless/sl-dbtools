@@ -11,7 +11,7 @@ use crate::{
         Seed,
     },
     manager::ManagerDb,
-    namer::DbNamingOpts,
+    namer::{DbNamingOpts, DbNamingTemplate},
 };
 
 use super::SlArgs;
@@ -65,8 +65,7 @@ impl LoadArgs {
             db_url.new_temp_url(DbNamingOpts {
                 base: None,
                 name: None,
-                with_uuid: true,
-                with_time: true,
+                pattern: DbNamingTemplate::Pattern("z{timestamp}_load_{uuid}".into()),
                 keep_full: false,
             })
         } else { db_url };
