@@ -222,7 +222,7 @@ impl MigrateArgs {
         };
 
         if let Some(target) = &self.target {
-            let target = TargetVersion::new_from_str(&target);
+            let target = TargetVersion::new_from_str(target);
 
             let base_url = args.get_url()?;
             let admin_url = args.get_admin_url()?;
@@ -260,6 +260,7 @@ impl MigrateArgs {
                         &target,
                         schema_file,
                         migrate_files,
+                        &args.get_temp_db_pattern(),
                     ).await?;
                     Ok(())
                 },
@@ -271,6 +272,7 @@ impl MigrateArgs {
                         &view_name,
                         &target,
                         migrate_files,
+                        &args.get_temp_db_pattern(),
                     ).await?;
                     Ok(())
                 },
@@ -323,7 +325,7 @@ impl MigrateArgs {
             info!("Initial state:");
             info!("{}", manager);
 
-            if None == manager.get_next_step() {
+            if manager.get_next_step().is_none() {
                 info!("Already at target: {}", &target);
                 return Ok(());
             }
@@ -351,9 +353,7 @@ impl MigrateArgs {
             self.print_config();
         }
 
-        if let Some(_) = self.schema_file {
-            self.migrate_files(args).await
-        } else if let Some(_) = self.file {
+        if self.schema_file.is_some() || self.file.is_some() {
             self.migrate_files(args).await
         } else {
             self.migrate_db(args).await

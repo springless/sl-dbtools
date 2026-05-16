@@ -95,7 +95,7 @@ impl MigrationManager for PgMigrationManager {
             };
 
             let version_text = if let SchemaVersion::Version(version_str) = this_version {
-                &version_str
+                version_str
             } else {
                 "(ROOT)"
             };
@@ -121,7 +121,7 @@ impl MigrationManager for PgMigrationManager {
 
         let next = &self.migration_path.last();
         // we're out of steps
-        if &None == next { return Ok(None) }
+        if next.is_none() { return Ok(None) }
         let next = next.unwrap();
 
         let raw_sql = next.action.get_raw_sql().await?;

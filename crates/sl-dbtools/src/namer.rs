@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
@@ -25,9 +27,9 @@ impl DbNamingTemplate {
 /// but still readable names for temporary test databases. So for example my main project
 /// database might be `my_project`. A test might request a database with the struct:
 /// ```rust
-/// use sl_dbtools::namer::DbNamingProps;
+/// use sl_dbtools::namer::{DbNamingProps, DbNamingTemplate::Pattern};
 /// let props = DbNamingProps {
-///     base: "my_project".into(),
+///     base: Some("my_project".into()),
 ///     name: Some("my_test".into()),
 ///     pattern: Pattern("{timestamp}_{base}_{name}_{uuid}".into()),
 ///     keep_full: true,
@@ -221,6 +223,15 @@ impl ToDbId for DbNamingProps {
         } else {
             truncate_identifier(result)
         }
+    }
+}
+
+impl ToDbId for PathBuf {
+    fn to_db_id(&self) -> String {
+        self.to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect()
     }
 }
 

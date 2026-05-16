@@ -23,6 +23,7 @@ pub struct TestEnv {
     postgres_admin_url: Option<DbUrl>,
     pub sqlite_url: DbUrl,
     seed_dir: PathBuf,
+    pub temp_db_pattern: DbNamingTemplate,
 }
 
 impl TestEnv {
@@ -47,6 +48,10 @@ impl TestEnv {
                 &std::env::var("SQLITE_URL").expect("Set SQLITE_URL in the environment"),
             ).expect("SQLITE_URL is invalid"),
             seed_dir,
+            temp_db_pattern:
+                std::env::var("TEMP_DATABASE_PATTERN")
+                .map(DbNamingTemplate::Pattern)
+                .unwrap_or(DbNamingTemplate::Default),
         }
     }
 

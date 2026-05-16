@@ -15,7 +15,7 @@ use crate::{
     }, error::DbToolsError, managed::{ManagedDb, Seed}, migrate::{
         manager::MigrationManager,
         version::TargetVersion,
-    }, namer::DbNamingTemplate, url::DbUrl
+    }, namer::{DbNamingTemplate, ToDbId}, url::DbUrl
 };
 
 pub struct FileMigrator {
@@ -51,14 +51,15 @@ impl FileMigrator {
         }
     }
 
-    /// Create the database to house this file. Generates a random database name
-    async fn create_db(mut self) -> Result<Self, DbToolsError> {
+    /// Create the database to house this file. Generates a random database name based
+    /// on the file
+    async fn create_db(mut self, pattern: &DbNamingTemplate) -> Result<Self, DbToolsError> {
         let db_builder = PgTempDbBuilder::new(
             &self.base_url,
             &Some(self.admin_url.clone()),
             Initial::Empty,
-            DbNamingTemplate::Pattern("zz{timestamp}_file_migrate_{uuid}".to_owned())
-        )?;
+            pattern.clone(),
+        )?.set_name(self.file.to_db_id());
 
         let db_builder = match &self.file {
             SqlFile::SchemaWithData(fname) => {
@@ -89,7 +90,7 @@ impl FileMigrator {
         ).await;
 
         if let Err(mgr_err) = manager {
-            let _ = self.cleanup().await?;
+            self.cleanup().await?;
             return Err(mgr_err);
         }
         self.manager = Some(manager.unwrap());
@@ -100,7 +101,7 @@ impl FileMigrator {
         let mgr = self.manager.as_mut().unwrap();
         mgr.set_target(target.clone())?;
 
-        while let Some(_) = mgr.get_next_step() {
+        while mgr.get_next_step().is_some() {
             mgr.do_next_migration().await?;
         }
         Ok(self)
@@ -112,7 +113,7 @@ impl FileMigrator {
         match &self.file {
             SqlFile::Schema(_) => {
                 dump_db(
-                    &db.url(),
+                    db.url(),
                     writer,
                     &DumpType::SchemaOnly,
                     &None,
@@ -120,7 +121,7 @@ impl FileMigrator {
             }
             SqlFile::SchemaWithData(_) => {
                 dump_db(
-                    &db.url(),
+                    db.url(),
                     writer,
                     &DumpType::All,
                     &None,
@@ -128,7 +129,7 @@ impl FileMigrator {
             }
             SqlFile::Data { schema: _, data: _ } => {
                 dump_db(
-                    &db.url(),
+                    db.url(),
                     writer,
                     &DumpType::DataOnly,
                     &None,
@@ -155,6 +156,7 @@ impl FileMigrator {
         migration_folder: &Path,
         view_name: &str,
         target: &TargetVersion,
+        pattern: &DbNamingTemplate,
     ) -> Result<(), DbToolsError> {
         let file_migrator = Self::new(
             file.clone(),
@@ -166,8 +168,8 @@ impl FileMigrator {
             SqlFile::Schema(schema) => schema,
             SqlFile::SchemaWithData(schema) => schema,
         };
-        let _ = file_migrator
-            .create_db().await?
+        file_migrator
+            .create_db(pattern).await?
             .create_migrator(migration_folder.to_owned(), view_name).await?
             .migrate(target).await?
             .dump(&mut File::create(dump_path)?).await?
@@ -190,17 +192,19 @@ impl FileMigrator {
         view_name: &str,
         target: &TargetVersion,
         files: I,
+        pattern: &DbNamingTemplate,
     ) -> Result<(), DbToolsError> {
         for f in files {
             let fname = f.as_ref();
             info!("Migrating Schema+Data File: {:?}", fname);
-            let _ = Self::migrate_file(
+            Self::migrate_file(
                 base_url.clone(),
                 admin_url.clone(),
                 SqlFile::SchemaWithData(fname.to_owned()),
                 migration_folder.as_ref(),
                 view_name,
                 target,
+                pattern,
             ).await?;
         }
         Ok(())
@@ -224,6 +228,7 @@ impl FileMigrator {
         target: &TargetVersion,
         schema: P,
         files: I,
+        pattern: &DbNamingTemplate,
     ) -> Result<(), DbToolsError> {
         let schema_path = schema.as_ref();
 
@@ -232,28 +237,40 @@ impl FileMigrator {
         for f in files {
             let fname = f.as_ref();
             info!("Migrating Data File: {:?}", fname);
-            let _ = Self::migrate_file(
+            Self::migrate_file(
                 base_url.clone(),
                 admin_url.clone(),
                 SqlFile::Data{ schema: schema_path.to_owned(), data: fname.to_owned() },
                 migration_folder.as_ref(),
                 view_name,
                 target,
+                pattern,
             ).await?;
         }
 
         // Now we can finish by migrating the schema file
         info!("Migrating Schema File: {:?}", schema_path);
-        let _ = Self::migrate_file(
+        Self::migrate_file(
             base_url.clone(),
             admin_url.clone(),
             SqlFile::Schema(schema_path.to_owned()),
             migration_folder.as_ref(),
             view_name,
             target,
+            pattern,
         ).await?;
 
         Ok(())
+    }
+}
+
+impl ToDbId for SqlFile {
+    fn to_db_id(&self) -> String {
+        match self {
+            SqlFile::Data { schema: _, data } => { data.to_db_id() },
+            SqlFile::Schema(f) => { f.to_db_id() },
+            SqlFile::SchemaWithData(f) => { f.to_db_id() },
+        }
     }
 }
 
@@ -278,7 +295,7 @@ mod tests {
         );
 
         let res = migrator
-            .create_db().await.unwrap()
+            .create_db(&TEST_ENV.temp_db_pattern).await.unwrap()
             .create_migrator("../../tests/migrations".into(), "_schema_version")
             .await.unwrap()
             .migrate(&TargetVersion::Current(2)).await.unwrap()
