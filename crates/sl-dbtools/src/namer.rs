@@ -11,6 +11,15 @@ pub enum DbNamingTemplate {
     Pattern(String),
 }
 
+impl DbNamingTemplate {
+    pub fn into_pattern(&self) -> String {
+        match self {
+            DbNamingTemplate::Default => DEFAULT_NAME_PATTERN.to_owned(),
+            DbNamingTemplate::Pattern(patt) => patt.to_owned(),
+        }
+    }
+}
+
 /// This describes the values used to generate a new name for a database starting from a
 /// base name. The example and original use case for this is constructing slightly random
 /// but still readable names for temporary test databases. So for example my main project
@@ -55,7 +64,7 @@ pub enum DbNamingTemplate {
 /// Any characters outside of curly braces will be interpreted literally.
 pub struct DbNamingProps {
     pub pattern: DbNamingTemplate,
-    pub base: String,
+    pub base: Option<String>,
     pub name: Option<String>,
     pub keep_full: bool,
 }
@@ -69,7 +78,7 @@ impl DbNamingProps {
         let this_name = name.map(|v| v.as_ref().to_string());
         DbNamingProps {
             pattern: DbNamingTemplate::Default,
-            base: base.as_ref().into(),
+            base: Some(base.as_ref().into()),
             name: this_name,
             keep_full: false,
         }
@@ -78,6 +87,109 @@ impl DbNamingProps {
     /// Creates a new DbNamingProps instance from a DbNamingOpts object
     pub fn new_from_opts(opts: DbNamingOpts) -> Self {
         opts.build()
+    }
+
+    /// Creates a regex that makes a best-guess match for the naming props
+    pub fn into_regex(&self) -> String {
+        let pattern = match &self.pattern {
+            DbNamingTemplate::Default => DEFAULT_NAME_PATTERN,
+            DbNamingTemplate::Pattern(p) => p.as_str(),
+        };
+
+        let mut regex = String::from("^");
+        let mut min_len: usize = 0;
+        let mut uncertain = false;
+        let mut rest = pattern;
+
+        while !rest.is_empty() && !uncertain {
+            if let Some(open) = rest.find('{') {
+                if open > 0 {
+                    let literal = &rest[..open];
+                    if !self.keep_full && min_len + literal.len() > 56 {
+                        uncertain = true;
+                        break;
+                    }
+                    regex.push_str(&pg_regex_escape(literal));
+                    min_len += literal.len();
+                }
+                rest = &rest[open + 1..];
+
+                if let Some(close) = rest.find('}') {
+                    let placeholder = &rest[..close];
+                    rest = &rest[close + 1..];
+
+                    match placeholder {
+                        "timestamp" => {
+                            if !self.keep_full && min_len + 14 > 56 {
+                                uncertain = true;
+                            } else {
+                                regex.push_str(r"\d{14}");
+                                min_len += 14;
+                            }
+                        }
+                        "uuid" => {
+                            if !self.keep_full && min_len + 36 > 56 {
+                                uncertain = true;
+                            } else {
+                                regex.push_str(r"[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}");
+                                min_len += 36;
+                            }
+                        }
+                        "base" => match &self.base {
+                            Some(n) => {
+                                if !self.keep_full && min_len + n.len() > 56 {
+                                    uncertain = true;
+                                } else {
+                                    regex.push_str(&pg_regex_escape(n));
+                                    min_len += n.len();
+                                }
+                            }
+                            None => uncertain = true,
+                        }
+                        "name" => match &self.name {
+                            Some(n) => {
+                                if !self.keep_full && min_len + n.len() > 56 {
+                                    uncertain = true;
+                                } else {
+                                    regex.push_str(&pg_regex_escape(n));
+                                    min_len += n.len();
+                                }
+                            }
+                            None => uncertain = true,
+                        },
+                        _ => uncertain = true,
+                    }
+                } else {
+                    regex.push_str(&pg_regex_escape(rest));
+                    rest = "";
+                }
+            } else {
+                if !self.keep_full && min_len + rest.len() > 56 {
+                    uncertain = true;
+                } else {
+                    regex.push_str(&pg_regex_escape(rest));
+                    min_len += rest.len();
+                }
+                rest = "";
+            }
+        }
+
+        if uncertain {
+            // The separator before an absent optional field may have been eaten by
+            // the underscore-collapsing logic in interpolate_db_name, so make it optional.
+            if regex.ends_with('_') {
+                regex.pop();
+                regex.push_str("_?");
+            }
+            regex.push_str(".*");
+        } else if self.keep_full {
+            regex.push('$');
+        } else {
+            // Truncation may have altered the tail, so don't anchor at end
+            regex.push_str(".*");
+        }
+
+        regex
     }
 }
 
@@ -98,7 +210,7 @@ impl ToDbId for DbNamingProps {
 
         let result = interpolate_db_name(
             pattern,
-            &self.base,
+            self.base.as_deref(),
             self.name.as_deref(),
             timestamp,
             uuid,
@@ -114,7 +226,7 @@ impl ToDbId for DbNamingProps {
 
 fn interpolate_db_name(
     pattern: &str,
-    base: &str,
+    base: Option<&str>,
     name: Option<&str>,
     timestamp: Option<chrono::DateTime<Utc>>,
     uuid: Option<Uuid>,
@@ -122,7 +234,7 @@ fn interpolate_db_name(
     let timestamp_str = timestamp.map(|ts| ts.to_db_id());
     let uuid_str = uuid.map(|uuid| uuid.to_db_id());
     let raw = pattern
-        .replace("{base}", base)
+        .replace("{base}", base.unwrap_or(""))
         .replace("{name}", name.unwrap_or(""))
         .replace("{timestamp}", timestamp_str.as_deref().unwrap_or(""))
         .replace("{uuid}", uuid_str.as_deref().unwrap_or(""));
@@ -149,6 +261,17 @@ fn interpolate_db_name(
 }
 
 
+fn pg_regex_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for ch in s.chars() {
+        if matches!(ch, '.' | '\\' | '[' | ']' | '^' | '$' | '*' | '+' | '?' | '{' | '}' | '|' | '(' | ')') {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 // When called, an implementor of this trait should be able to generate a new version
 // of itself, but incorporating the provided "name" into the new database version, and
 // the rest of the `DbNamingProps` values.
@@ -172,7 +295,7 @@ impl DbNamingOpts {
             base
         } else { "temp".to_owned() };
         DbNamingProps {
-            base,
+            base: Some(base),
             name: self.name,
             pattern: self.pattern,
             keep_full: self.keep_full,
@@ -322,7 +445,7 @@ mod tests_to_db_id {
         assert_eq!(
             interpolate_db_name(
                 "{timestamp}_{base}_{name}_{uuid}",
-                "my_project", Some("my_test"), Some(ts()), Some(UUID),
+                Some("my_project"), Some("my_test"), Some(ts()), Some(UUID),
             ),
             "20241017203814_my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
         );
@@ -333,7 +456,7 @@ mod tests_to_db_id {
         assert_eq!(
             interpolate_db_name(
                 "{timestamp}_{base}_{name}_{uuid}",
-                "my_project", None, Some(ts()), Some(UUID),
+                Some("my_project"), None, Some(ts()), Some(UUID),
             ),
             "20241017203814_my_project_3a45686d_8213_48b3_b817_7e28c80f6e71",
         );
@@ -344,7 +467,7 @@ mod tests_to_db_id {
         assert_eq!(
             interpolate_db_name(
                 "{timestamp}_{base}_{name}_{uuid}",
-                "my_project", Some("my_test"), None, Some(UUID),
+                Some("my_project"), Some("my_test"), None, Some(UUID),
             ),
             "my_project_my_test_3a45686d_8213_48b3_b817_7e28c80f6e71",
         );
@@ -355,7 +478,7 @@ mod tests_to_db_id {
         assert_eq!(
             interpolate_db_name(
                 "{timestamp}_{base}_{name}_{uuid}",
-                "my_project", Some("my_test"), Some(ts()), None,
+                Some("my_project"), Some("my_test"), Some(ts()), None,
             ),
             "20241017203814_my_project_my_test",
         );
@@ -366,7 +489,7 @@ mod tests_to_db_id {
         assert_eq!(
             interpolate_db_name(
                 "{timestamp}_{base}_{name}_{uuid}",
-                "my_project", None, None, None,
+                Some("my_project"), None, None, None,
             ),
             "my_project",
         );
@@ -375,7 +498,7 @@ mod tests_to_db_id {
     #[test]
     fn test_interpolate_default_pattern() {
         assert_eq!(
-            interpolate_db_name(DEFAULT_NAME_PATTERN, "my_project", Some("my_test"), Some(ts()), None),
+            interpolate_db_name(DEFAULT_NAME_PATTERN, Some("my_project"), Some("my_test"), Some(ts()), None),
             "z20241017203814_my_project_my_test",
         );
     }
@@ -383,7 +506,7 @@ mod tests_to_db_id {
     #[test]
     fn test_interpolate_default_pattern_no_name() {
         assert_eq!(
-            interpolate_db_name(DEFAULT_NAME_PATTERN, "my_project", None, Some(ts()), None),
+            interpolate_db_name(DEFAULT_NAME_PATTERN, Some("my_project"), None, Some(ts()), None),
             "z20241017203814_my_project",
         );
     }
@@ -392,7 +515,7 @@ mod tests_to_db_id {
     fn test_dbnamingprops_to_db_id_smoke() {
         let result = DbNamingProps {
             pattern: DbNamingTemplate::Default,
-            base: "my_project".into(),
+            base: Some("my_project".into()),
             name: Some("my_test".into()),
             keep_full: false,
         }.to_db_id();
@@ -410,7 +533,7 @@ mod tests_dbnamingprops {
     #[test]
     fn test_new_default() {
         let props = DbNamingProps::new_default("my_db", Some("my_test"));
-        assert_eq!(props.base, "my_db");
+        assert_eq!(props.base, Some("my_db".into()));
         assert_eq!(props.name, Some("my_test".into()));
         assert!(!props.keep_full);
     }

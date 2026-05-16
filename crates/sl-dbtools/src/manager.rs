@@ -17,4 +17,9 @@ pub trait ManagerDb<D: Database, T: ManagedDb<D>> {
     /// first.
     #[allow(async_fn_in_trait)]
     async fn ensure(&self, url: &DbUrl) -> Result<T, sqlx::Error>;
+
+    /// Finds all databases matching the passed regex and returns them as
+    /// managed databases
+    #[allow(async_fn_in_trait)]
+    async fn find_by_regex(&self, regex: &str) -> Result<Vec<T>, sqlx::Error>;
 }
