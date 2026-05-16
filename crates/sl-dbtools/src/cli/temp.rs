@@ -8,7 +8,8 @@ use super::SlArgs;
 /// Make a new temporary database
 ///
 /// Useful to make a backup of the current main database or to spin off a new
-/// playground database.
+/// playground database. This will use the `TEMP_DATABASE_PATTERN` when generating
+/// database names.
 #[derive(Args, Debug, Clone)]
 pub struct TempCreate {
     /// Set base name of the database
@@ -38,28 +39,6 @@ pub struct TempCreate {
     /// Pass this flag to create a completely blank database.
     #[arg(short, long)]
     empty: bool,
-
-    /// Omit the timestamp from the name
-    ///
-    /// By default the new database name will contain a timestamp in the format `YYYYmmddHHMMSS`.
-    /// This flag will remove that timestamp:
-    ///
-    /// 202407101124_base_name_UUID
-    ///
-    /// ^^^^^^^^^^^^ Removes this
-    #[arg(short = 'T', long)]
-    no_timestamp: bool,
-
-    /// Omit the UUID from the name
-    ///
-    /// By default the new database name will contain a UUID appended to the end, just to
-    /// resolve any potential naming conflicts. This flag will remove that UUID
-    ///
-    /// 202407101124_base_name_UUID
-    ///
-    /// _________ Removes this ^^^^
-    #[arg(short = 'U', long)]
-    no_uuid: bool,
 }
 
 /// Clean up or list existing temporary databases
@@ -163,14 +142,26 @@ impl TempArgs {
                     db.drop().await?;
                 }
             },
-            TempCommand::Create(_sub_args) => {
+            TempCommand::Create(sub_args) => {
                 info!("Creating...");
-                let temp_builder = PgTempDbBuilder::new(
-                    &args.get_url()?,
+                let base_url = args.get_url()?;
+                let new_base_url = if let Some(new_base) = &sub_args.base {
+                    let mut new_url = base_url.clone();
+                    new_url.set_dbname(new_base);
+                    new_url
+                } else { base_url };
+                let mut temp_builder = PgTempDbBuilder::new(
+                    &new_base_url,
                     &Some(args.get_admin_url()?),
-                    Initial::Empty,
+                    if sub_args.empty {
+                        Initial::Empty
+                    } else { Initial::Template(args.get_url()?) },
                     args.get_temp_db_pattern(),
                 )?;
+
+                if let Some(name) = &sub_args.name {
+                    temp_builder = temp_builder.set_name(name.to_owned())
+                }
                 let created_db = temp_builder.build().await?;
                 info!("Created Temp Database: {:?}", created_db.url().as_str());
             },
