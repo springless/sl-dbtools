@@ -2,6 +2,9 @@
 !.example.env
 !.example.*.env
 
+# LLM folders
+.claude/
+
 # Schemaspy output
 /schemaspy-output
 
