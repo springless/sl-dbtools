@@ -62,6 +62,9 @@ pub fn dump_db<W: Write>(
         // It starts off true to remove any blanks in the leadup to the first
         // kept line.
         let mut consecutive_blank_line = true;
+        // start off by ensuring the file is dumped as-is, and disables any triggers
+        // or other functions from running while attempting to re-load its data
+        writeln!(writer, "SET session_replication_role = replica;")?;
         for line in reader.lines() {
             let line = line?;
             let is_blank = line.trim().is_empty();
@@ -102,6 +105,9 @@ pub fn dump_db<W: Write>(
 fn keep_dump_line(line: &str) -> bool {
     !(
     line.starts_with("--")
+    // strip out pg_dump lines that protect against psql injection attacks;
+    // this program doesn't load them back using psql
+    || line.starts_with("\\restrict") || line.starts_with("\\unrestrict")
     || (
     line.starts_with("SET")
     && !(
