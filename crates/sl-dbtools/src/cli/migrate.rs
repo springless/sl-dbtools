@@ -163,7 +163,7 @@ pub struct MigrateArgs {
     /// This will cause the database to be dropped prior to running migrations (meaning
     /// it will always only run `up` migrations). It will also run a `ROOT.sql` file in
     /// the migration folder -- if it exists -- prior to running the rest of the migrations.
-    #[arg(short='R', long)]
+    #[arg(short='r', long)]
     pub remake: bool,
 
     /// Create the database if it does not exist
@@ -176,8 +176,8 @@ pub struct MigrateArgs {
 }
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
-const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
-const DEFAULT_VIEW_NAME: &str = "_schema_version";
+pub const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
+pub const DEFAULT_VIEW_NAME: &str = "_schema_version";
 
 impl MigrateArgs {
     pub fn get_dir(&self) -> Option<String> {

@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Write}, path::Path};
 use sqlx::{
-    query, Connection, PgConnection, Row,
+    AssertSqlSafe, Connection, PgConnection, Row, query,
 };
 
 use crate::{
@@ -131,7 +131,7 @@ impl MigrationManager for PgMigrationManager {
 
         // run the migration file, if it exists
         if let Some(raw_sql) = raw_sql {
-            let res = sqlx::raw_sql(&raw_sql)
+            let res = sqlx::raw_sql(AssertSqlSafe(raw_sql.clone()))
                 .execute(&mut *tx)
                 .await;
             if let Err(sqlx_err) = res {
@@ -154,7 +154,7 @@ impl MigrationManager for PgMigrationManager {
 
         // remove the path step we just finished
         self.migration_path.pop();
-        Ok(Some((path_len).max(0)))
+        Ok(Some(path_len))
     }
 
     fn get_next_step(&self) -> Option<&MigrationStep> {
@@ -170,7 +170,7 @@ impl Display for PgMigrationManager {
 
 
 pub async fn get_version(conn: &mut PgConnection, view_name: &str) -> Result<SchemaVersion, DbToolsError> {
-    let row = query(&format!("SELECT version FROM {}", view_name))
+    let row = query(AssertSqlSafe(format!("SELECT version FROM {}", view_name)))
         .fetch_one(conn)
         .await;
 
@@ -197,8 +197,18 @@ pub async fn get_version(conn: &mut PgConnection, view_name: &str) -> Result<Sch
     Ok(version?)
 }
 
+/// Open a connection, fetch the schema version, and close it again
+///
+/// Convenience function for when all you have is a url
+pub async fn get_version_from_url(url: &DbUrl, view_name: &str) -> Result<SchemaVersion, DbToolsError> {
+    let mut conn = PgConnection::connect_with(&url.get_pg_conn_opts()?).await?;
+    let version = get_version(&mut conn, view_name).await?;
+    conn.close().await?;
+    Ok(version)
+}
+
 pub async fn set_version(conn: &mut PgConnection, view_name: &str, version: &SchemaVersion) -> Result<(), DbToolsError> {
-    let q = match version {
+    let q = AssertSqlSafe(match version {
         SchemaVersion::Root => {
             format!("DROP VIEW IF EXISTS {}", view_name)
         },
@@ -209,9 +219,9 @@ pub async fn set_version(conn: &mut PgConnection, view_name: &str, version: &Sch
                 ver_str,
             )
         },
-    };
+    });
 
-    sqlx::query(&q)
+    sqlx::query(q)
         .execute(conn)
         .await?;
 

@@ -1,6 +1,6 @@
-/// Utility functions for the creation and deletion of databases
+// Utility functions for the creation and deletion of databases
 
-use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, Error, Executor};
+use sqlx::{AssertSqlSafe, ConnectOptions, Error, Executor, postgres::PgConnectOptions, query};
 
 /// Attempts to guess the name of the maintenance database. It is theoretically possible
 /// that a postgres server will not have `postgres` or `template1`, but this assumes that
@@ -41,11 +41,11 @@ pub async fn create_owned_database(
     let owner = to_create.get_username();
 
     let _ = conn
-        .execute(&*format!(
+        .execute(AssertSqlSafe(format!(
             "CREATE DATABASE \"{}\" OWNER \"{}\"",
             database.replace('"', "\"\""),
             owner.replace('"', "\"\""),
-        ))
+        )))
         .await?;
 
     Ok(())
@@ -88,12 +88,12 @@ pub async fn create_owned_database_from_template(
     let owner = to_create.get_username();
 
     let _ = conn
-        .execute(&*format!(
+        .execute(AssertSqlSafe(format!(
             "CREATE DATABASE \"{}\" WITH TEMPLATE \"{}\" OWNER \"{}\"",
             database.replace('"', "\"\""),
             template_database.replace('"', "\"\""),
             owner.replace('"', "\"\""),
-        ))
+        )))
         .await?;
 
     Ok(())
@@ -110,10 +110,10 @@ pub async fn force_drop_database(
         .ok_or_else(|| Error::RowNotFound)?;
 
     let _ = conn
-        .execute(&*format!(
+        .execute(AssertSqlSafe(format!(
             "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
             del_db_name.replace('"', "\"\"")
-        ))
+        )))
         .await?;
 
     Ok(())
