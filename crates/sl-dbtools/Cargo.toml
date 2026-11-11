@@ -1,12 +1,11 @@
 [package]
 name = "sl-dbtools"
 version = "0.1.0"
-edition = "2021"
 
 description = "Lightweight database migration utility"
-license = "MIT"
-repository = "https://github.com/springless/sl-dbtools"
-homepage = "https://github.com/springless/sl-dbtools"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 readme = "../../README.md"
 
 authors = ["cogs <cogs@springless.com>"]
@@ -18,19 +17,18 @@ name = "sldb"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.92"
-async-std = { version = "1.13.0", features = ["unstable"] }
-chrono = "0.4.38"
-clap = { version = "4.5.20", features = ["derive"] }
+anyhow = "1.0.104"
+chrono = "0.4.45"
+clap = { version = "4.6.7", features = ["derive"] }
 dotenv = "0.15.0"
-insta = { version = "1.41.1", features = ["yaml", "redactions"] }
-log = "0.4.25"
-md5 = "0.7.0"
-sqlx = { version = "0.8.2", features = ["runtime-tokio", "any", "sqlite", "postgres", "tls-native-tls"] }
-thiserror = "1.0.66"
-tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
-url = "2.5.2"
-uuid = { version = "1.11.0", features = ["v4"] }
+log = "0.4.35"
+md5 = "0.8.1"
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "any", "sqlite", "postgres", "tls-native-tls"] }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+url = "2.5.8"
+uuid = { version = "1.29.2", features = ["v4"] }
 
 [dev-dependencies]
-insta = { version = "1.41.1", features = ["yaml", "redactions"] }
+insta = { version = "1.49.0", features = ["yaml", "redactions"] }
+async-std = { version = "1.13.2", features = ["unstable"] }

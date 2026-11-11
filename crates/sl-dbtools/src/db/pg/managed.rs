@@ -1,4 +1,4 @@
-use sqlx::{postgres::{PgConnectOptions, PgPoolOptions}, Postgres};
+use sqlx::{AssertSqlSafe, Postgres, postgres::{PgConnectOptions, PgPoolOptions}};
 
 use crate::url::DbUrl;
 use super::util;
@@ -42,7 +42,7 @@ impl ManagedDb<Postgres> for PgManagedDb {
             .await?;
         let raw_sql = seed.raw_sql().await?;
         let mut tx = conn.begin().await?;
-        sqlx::raw_sql(&raw_sql)
+        sqlx::raw_sql(AssertSqlSafe(raw_sql))
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -56,7 +56,7 @@ impl ManagedDb<Postgres> for PgManagedDb {
         let mut tx = conn.begin().await?;
         for seed in seeds {
             let raw_sql = seed.as_ref().raw_sql().await?;
-            sqlx::raw_sql(&raw_sql)
+            sqlx::raw_sql(AssertSqlSafe(raw_sql))
                 .execute(&mut *tx)
                 .await?;
         }

@@ -1,6 +1,6 @@
 use std::{fmt::{Display, Write}, path::Path};
 use sqlx::{
-    query, Connection, PgConnection, Row,
+    AssertSqlSafe, Connection, PgConnection, Row, query,
 };
 
 use crate::{
@@ -131,7 +131,7 @@ impl MigrationManager for PgMigrationManager {
 
         // run the migration file, if it exists
         if let Some(raw_sql) = raw_sql {
-            let res = sqlx::raw_sql(&raw_sql)
+            let res = sqlx::raw_sql(AssertSqlSafe(raw_sql.clone()))
                 .execute(&mut *tx)
                 .await;
             if let Err(sqlx_err) = res {
@@ -170,7 +170,7 @@ impl Display for PgMigrationManager {
 
 
 pub async fn get_version(conn: &mut PgConnection, view_name: &str) -> Result<SchemaVersion, DbToolsError> {
-    let row = query(&format!("SELECT version FROM {}", view_name))
+    let row = query(AssertSqlSafe(format!("SELECT version FROM {}", view_name)))
         .fetch_one(conn)
         .await;
 
@@ -198,7 +198,7 @@ pub async fn get_version(conn: &mut PgConnection, view_name: &str) -> Result<Sch
 }
 
 pub async fn set_version(conn: &mut PgConnection, view_name: &str, version: &SchemaVersion) -> Result<(), DbToolsError> {
-    let q = match version {
+    let q = AssertSqlSafe(match version {
         SchemaVersion::Root => {
             format!("DROP VIEW IF EXISTS {}", view_name)
         },
@@ -209,9 +209,9 @@ pub async fn set_version(conn: &mut PgConnection, view_name: &str, version: &Sch
                 ver_str,
             )
         },
-    };
+    });
 
-    sqlx::query(&q)
+    sqlx::query(q)
         .execute(conn)
         .await?;
 
