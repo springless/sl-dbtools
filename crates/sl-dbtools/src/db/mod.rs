@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use crate::error::DbToolsError;
+use crate::{error::DbToolsError, migrate::version::SchemaVersion};
 
 pub mod pg;
 
@@ -39,3 +39,15 @@ pub fn write_data_section<W: Write>(writer: &mut W, section: DataSection) -> Res
     })?;
     Ok(())
 }
+
+pub fn write_schema_version<W: Write>(writer: &mut W, version: &SchemaVersion) -> Result<(), DbToolsError> {
+    match version {
+        SchemaVersion::Version(vstr) => {
+            writeln!(writer, "-- SCHEMA VERSION: {}\n", vstr)?;
+            Ok(())
+        },
+        // Root means there is no version to write
+        SchemaVersion::Root => Ok(()),
+    }
+}
+

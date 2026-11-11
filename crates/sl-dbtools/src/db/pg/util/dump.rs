@@ -3,7 +3,8 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use crate::db::{DataSection, write_data_section};
+use crate::db::{DataSection, write_data_section, write_schema_version};
+use crate::migrate::version::SchemaVersion;
 use crate::url::DbUrl;
 use crate::error::DbToolsError;
 
@@ -23,7 +24,9 @@ pub fn dump_db<W: Write>(
     writer: &mut W,
     dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
+    version: &SchemaVersion,
 ) -> Result<(), DbToolsError> {
+    write_schema_version(writer, version)?;
     match dump_type {
         DumpType::All => {
             dump_section(url, DataSection::PreData, writer, schemas)?;

@@ -2,7 +2,7 @@ use std::fs::File;
 
 use clap::Args;
 
-use crate::db::pg::util::dump::{dump_db, DumpType};
+use crate::{cli::migrate::{DEFAULT_VIEW_NAME, ENV_MIGRATION_VIEW_NAME}, db::{pg::{migrate::get_version_from_url, util::dump::{DumpType, dump_db}}}, migrate::version::SchemaVersion};
 
 use super::SlArgs;
 
@@ -36,6 +36,26 @@ pub struct DumpArgs {
     /// database.
     #[arg(short='n', long)]
     pub schema: Option<Vec<String>>,
+
+    /// The name of the view that tracks migration version
+    ///
+    /// Whenever a migration is applied, this view is updated to return the version that
+    /// the schema is currently on.
+    ///
+    /// The name of this view can also be provided by the `MIGRATION_VIEW_NAME` environment
+    /// variable. This flag takes precedence over the environment.
+    ///
+    /// If this value is not provided in a flag or an environment variable it defaults to
+    /// `_schema_version`
+    #[arg(short, long)]
+    pub view_name: Option<String>,
+
+    /// Include the current version of the schema in the dump
+    ///
+    /// Adds a comment at the top of the dump describing the current schema version, as
+    /// indicated by the configured schema view
+    #[arg(short='V', long)]
+    pub with_version: bool,
 }
 
 impl DumpArgs {
@@ -47,7 +67,24 @@ impl DumpArgs {
         } else { DumpType::All };
 
         let mut fwriter = File::create(&self.file)?;
-        dump_db(&args.get_url()?, &mut fwriter, &dump_type, &self.schema)?;
+
+        let dburl = &args.get_url()?;
+
+        let version = if self.with_version {
+            get_version_from_url(&dburl, &self.get_view_name()).await?
+        } else { SchemaVersion::Root };
+
+        dump_db(dburl, &mut fwriter, &dump_type, &self.schema, &version)?;
         Ok(())
+    }
+
+    pub fn get_view_name(&self) -> String {
+        match &self.view_name {
+            Some(view_name) => view_name.to_owned(),
+            None => {
+                std::env::var(ENV_MIGRATION_VIEW_NAME)
+                    .unwrap_or(DEFAULT_VIEW_NAME.to_string())
+            },
+        }
     }
 }

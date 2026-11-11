@@ -13,8 +13,7 @@ use crate::{
             DumpType, dump_db
         }
     }}, error::DbToolsError, managed::{ManagedDb, Seed::self}, migrate::{
-        manager::MigrationManager,
-        version::TargetVersion,
+        manager::MigrationManager, version::{SchemaVersion, TargetVersion},
     }, namer::{DbNamingTemplate, ToDbId}, url::DbUrl
 };
 
@@ -108,8 +107,16 @@ impl FileMigrator {
         Ok(self)
     }
 
+    fn get_version(&self) -> &SchemaVersion {
+        self.manager
+            .as_ref()
+            .map_or(&SchemaVersion::Root, | mgr| mgr.get_version())
+    }
+
     async fn dump<W: Write>(self, writer: &mut W) -> Result<Self, DbToolsError> {
         let db = self.db.as_ref().unwrap();
+
+        let current_version = self.get_version();
 
         match &self.file {
             SqlFile::Schema(_) => {
@@ -118,6 +125,7 @@ impl FileMigrator {
                     writer,
                     &DumpType::SchemaOnly,
                     &None,
+                    current_version,
                 )?;
             }
             SqlFile::SchemaWithData(_) => {
@@ -126,6 +134,7 @@ impl FileMigrator {
                     writer,
                     &DumpType::All,
                     &None,
+                    current_version,
                 )?;
             }
             SqlFile::Data { schema: _, data: _ } => {
@@ -134,6 +143,7 @@ impl FileMigrator {
                     writer,
                     &DumpType::DataOnly,
                     &None,
+                    current_version,
                 )?;
             }
         }
@@ -307,7 +317,7 @@ mod tests {
         let migrated_str = String::from_utf8(buf.into_inner()).unwrap();
         assert_debug_snapshot!(
             migrated_str,
-            @r#""-- SECTION: PRE-DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nCREATE VIEW public._schema_version AS\n SELECT '04-remove-password'::text AS version;\n\nCREATE TABLE public.\"user\" (\n    id integer NOT NULL,\n    username text NOT NULL,\n    email text NOT NULL,\n    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,\n    first_name text\n);\n\nCREATE SEQUENCE public.user_id_seq\n    AS integer\n    START WITH 1\n    INCREMENT BY 1\n    NO MINVALUE\n    NO MAXVALUE\n    CACHE 1;\n\nALTER SEQUENCE public.user_id_seq OWNED BY public.\"user\".id;\n\nALTER TABLE ONLY public.\"user\" ALTER COLUMN id SET DEFAULT nextval('public.user_id_seq'::regclass);\n\n-- SECTION: DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nINSERT INTO public.\"user\" (id, username, email, created_at, first_name) VALUES\n\t(1, 'user1', 'user1@test.com', '2024-10-17 01:00:55.260444', 'User1'),\n\t(2, 'user2', 'user2@test.com', '2024-10-17 01:00:55.260444', 'User2'),\n\t(3, 'user3', 'user3@test.com', '2024-10-17 01:00:55.260444', 'User3');\n\nSELECT pg_catalog.setval('public.user_id_seq', 3, true);\n\n-- SECTION: POST-DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_email_key UNIQUE (email);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_pkey PRIMARY KEY (id);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_username_key UNIQUE (username);\n\n""#,
+            @r#""-- SCHEMA VERSION: 04-remove-password\n\n-- SECTION: PRE-DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nCREATE VIEW public._schema_version AS\n SELECT '04-remove-password'::text AS version;\n\nCREATE TABLE public.\"user\" (\n    id integer NOT NULL,\n    username text NOT NULL,\n    email text NOT NULL,\n    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,\n    first_name text\n);\n\nCREATE SEQUENCE public.user_id_seq\n    AS integer\n    START WITH 1\n    INCREMENT BY 1\n    NO MINVALUE\n    NO MAXVALUE\n    CACHE 1;\n\nALTER SEQUENCE public.user_id_seq OWNED BY public.\"user\".id;\n\nALTER TABLE ONLY public.\"user\" ALTER COLUMN id SET DEFAULT nextval('public.user_id_seq'::regclass);\n\n-- SECTION: DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nINSERT INTO public.\"user\" (id, username, email, created_at, first_name) VALUES\n\t(1, 'user1', 'user1@test.com', '2024-10-17 01:00:55.260444', 'User1'),\n\t(2, 'user2', 'user2@test.com', '2024-10-17 01:00:55.260444', 'User2'),\n\t(3, 'user3', 'user3@test.com', '2024-10-17 01:00:55.260444', 'User3');\n\nSELECT pg_catalog.setval('public.user_id_seq', 3, true);\n\n-- SECTION: POST-DATA\n\nSET client_encoding = 'UTF8';\nSET standard_conforming_strings = on;\nSELECT pg_catalog.set_config('search_path', '', false);\nSET check_function_bodies = false;\nSET xmloption = content;\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_email_key UNIQUE (email);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_pkey PRIMARY KEY (id);\n\nALTER TABLE ONLY public.\"user\"\n    ADD CONSTRAINT user_username_key UNIQUE (username);\n\n""#,
         );
     }
 }

@@ -176,8 +176,8 @@ pub struct MigrateArgs {
 }
 
 const ENV_MIGRATION_DIR: &str = "MIGRATION_DIR";
-const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
-const DEFAULT_VIEW_NAME: &str = "_schema_version";
+pub const ENV_MIGRATION_VIEW_NAME: &str = "MIGRATION_VIEW_NAME";
+pub const DEFAULT_VIEW_NAME: &str = "_schema_version";
 
 impl MigrateArgs {
     pub fn get_dir(&self) -> Option<String> {

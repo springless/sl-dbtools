@@ -197,6 +197,16 @@ pub async fn get_version(conn: &mut PgConnection, view_name: &str) -> Result<Sch
     Ok(version?)
 }
 
+/// Open a connection, fetch the schema version, and close it again
+///
+/// Convenience function for when all you have is a url
+pub async fn get_version_from_url(url: &DbUrl, view_name: &str) -> Result<SchemaVersion, DbToolsError> {
+    let mut conn = PgConnection::connect_with(&url.get_pg_conn_opts()?).await?;
+    let version = get_version(&mut conn, view_name).await?;
+    conn.close().await?;
+    Ok(version)
+}
+
 pub async fn set_version(conn: &mut PgConnection, view_name: &str, version: &SchemaVersion) -> Result<(), DbToolsError> {
     let q = AssertSqlSafe(match version {
         SchemaVersion::Root => {
