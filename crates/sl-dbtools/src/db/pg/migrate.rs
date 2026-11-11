@@ -154,7 +154,7 @@ impl MigrationManager for PgMigrationManager {
 
         // remove the path step we just finished
         self.migration_path.pop();
-        Ok(Some((path_len).max(0)))
+        Ok(Some(path_len))
     }
 
     fn get_next_step(&self) -> Option<&MigrationStep> {

@@ -1,13 +1,14 @@
-/// Utility functions for dumping data from the datbase
+// Utility functions for dumping data from the datbase
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
+use crate::db::{DataSection, write_data_section};
 use crate::url::DbUrl;
 use crate::error::DbToolsError;
 
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Clone, Copy)]
 pub enum DumpType {
     /// Schema and data
     All,
@@ -23,26 +24,49 @@ pub fn dump_db<W: Write>(
     dump_type: &DumpType,
     schemas: &Option<Vec<String>>,
 ) -> Result<(), DbToolsError> {
+    match dump_type {
+        DumpType::All => {
+            dump_section(url, DataSection::PreData, writer, schemas)?;
+            dump_section(url, DataSection::Data, writer, schemas)?;
+            dump_section(url, DataSection::PostData, writer, schemas)?;
+        },
+        DumpType::SchemaOnly => {
+            dump_section(url, DataSection::PreData, writer, schemas)?;
+            dump_section(url, DataSection::PostData, writer, schemas)?;
+        },
+        DumpType::DataOnly => {
+            dump_section(url, DataSection::Data, writer, schemas)?;
+        },
+    }
+    Ok(())
+}
+
+fn dump_section<W: Write>(
+    url: &DbUrl,
+    section: DataSection,
+    writer: &mut W,
+    schemas: &Option<Vec<String>>,
+) -> Result<(), DbToolsError> {
+    write_data_section(writer, section)?;
+
     let mut cmd = Command::new("pg_dump");
     let cmd = cmd
         .arg(url.to_string())
         .arg("--no-owner")
         .arg("--no-privileges");
 
-    let cmd = if &DumpType::All == dump_type || &DumpType::DataOnly == dump_type {
-        cmd
-            .arg("--rows-per-insert=1000")
-            .arg("--column-inserts")
-    } else { cmd };
-
-    let cmd = if &DumpType::DataOnly == dump_type {
-        cmd
-            .arg("--data-only")
-    } else if &DumpType::SchemaOnly == dump_type {
-        cmd
+    let cmd = match section {
+        DataSection::PreData => cmd
             .arg("--schema-only")
-    } else {
-        cmd
+            .arg("--section=pre-data"),
+        DataSection::Data => cmd
+            .arg("--data-only")
+            .arg("--section=data")
+            .arg("--rows-per-insert=1000")
+            .arg("--column-inserts"),
+        DataSection::PostData => cmd
+            .arg("--schema-only")
+            .arg("--section=post-data"),
     };
 
     let cmd = if let Some(schemas) = schemas {
@@ -62,9 +86,6 @@ pub fn dump_db<W: Write>(
         // It starts off true to remove any blanks in the leadup to the first
         // kept line.
         let mut consecutive_blank_line = true;
-        // start off by ensuring the file is dumped as-is, and disables any triggers
-        // or other functions from running while attempting to re-load its data
-        writeln!(writer, "SET session_replication_role = replica;")?;
         for line in reader.lines() {
             let line = line?;
             let is_blank = line.trim().is_empty();
@@ -94,6 +115,7 @@ pub fn dump_db<W: Write>(
         Err(DbToolsError::ProcessStatus("pg_dump".to_owned(), status.code()))
     }
 }
+
 
 /// Returns `true` if the line should be kept, `false` otherwise.
 ///

@@ -163,7 +163,7 @@ pub struct MigrateArgs {
     /// This will cause the database to be dropped prior to running migrations (meaning
     /// it will always only run `up` migrations). It will also run a `ROOT.sql` file in
     /// the migration folder -- if it exists -- prior to running the rest of the migrations.
-    #[arg(short='R', long)]
+    #[arg(short='r', long)]
     pub remake: bool,
 
     /// Create the database if it does not exist

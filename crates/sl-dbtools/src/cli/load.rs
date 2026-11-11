@@ -1,17 +1,13 @@
 use clap::Args;
 use log::info;
 use crate::{
-    cli::error::CliError,
-    db::pg::{
+    cli::error::CliError, db::{DataSection, pg::{
         managed::PgManagedDb,
         manager::PgManagerDb,
-    },
-    managed::{
+    }}, managed::{
         ManagedDb,
         Seed,
-    },
-    manager::ManagerDb,
-    namer::{DbNamingOpts, DbNamingTemplate},
+    }, manager::ManagerDb, namer::{DbNamingOpts, DbNamingTemplate},
 };
 
 use super::SlArgs;
@@ -23,9 +19,22 @@ use super::SlArgs;
 pub struct LoadArgs {
     /// The files to load
     ///
-    /// Files will be loaded in the order provided
+    /// Files will be loaded in the order provided, unless a schema file is
+    /// provided.
     #[arg(value_name="SEED")]
     pub seed: Vec<String>,
+
+    /// Load a seed file as a schema file
+    ///
+    /// A schema file is expected to have both pre and post data sections, marked
+    /// with a comment as `-- SECTION: PRE-DATA/POST-DATA`
+    ///
+    /// When loading seed files, the schema file's `PRE-DATA` section will be run
+    /// first, then all seed files, and lastly the `POST-DATA` section.
+    ///
+    /// If no schema file is passed then it will just run all seed files in order.
+    #[arg(short, long, value_name="SCHEMA_SEED")]
+    pub schema: Option<String>,
 
     /// Create new temporary database
     ///
@@ -99,11 +108,18 @@ impl LoadArgs {
             PgManagedDb::new(db_url.clone(), Some(manager_url.clone()))?
         };
 
+        // At this point the database should exist and `managed_db` should point to it
         info!("Seeding database");
 
+        if let Some(schemafile) = &self.schema {
+            let seed = Seed::FileSection(schemafile.into(), DataSection::PreData);
+            info!("Seeding pre-data from file: {}", schemafile);
+            managed_db.seed(seed).await?;
+        }
+
+        // run through the regular seed files
         let seed_iter = self.seed.iter().map(|s| Seed::File(s.into()));
 
-        // At this point the database should exist and `managed_db` should point to it
         if self.all_or_nothing {
             info!("Running all seeds");
             managed_db.seed_all(seed_iter).await?;
@@ -112,9 +128,17 @@ impl LoadArgs {
                 match &seed {
                     Seed::File(fname) => { info!("Seeding from file: {}", fname.to_string_lossy()); },
                     Seed::Sql(_) => { info!("Running raw sql..."); },
+                    // none of these can be a sectioned file
+                    Seed::FileSection(_, _) => continue,
                 }
                 managed_db.seed(seed).await?;
             }
+        }
+
+        if let Some(schemafile) = &self.schema {
+            let seed = Seed::FileSection(schemafile.into(), DataSection::PostData);
+            info!("Seeding post-data from file: {}", schemafile);
+            managed_db.seed(seed).await?;
         }
 
         Ok(())
