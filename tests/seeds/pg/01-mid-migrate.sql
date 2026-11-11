@@ -1,4 +1,12 @@
+-- SCHEMA VERSION: 02-update-user-table
+
+-- SECTION: PRE-DATA
+
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
 SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
 
 CREATE VIEW public._schema_version AS
  SELECT '02-update-user-table'::text AS version;
@@ -24,12 +32,28 @@ ALTER SEQUENCE public.user_id_seq OWNED BY public."user".id;
 
 ALTER TABLE ONLY public."user" ALTER COLUMN id SET DEFAULT nextval('public.user_id_seq'::regclass);
 
+-- SECTION: DATA
+
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+
 INSERT INTO public."user" (id, username, email, password_hash, created_at, first_name) VALUES
 	(1, 'user1', 'user1@test.com', 'abcdefg', '2024-10-17 01:00:55.260444', 'User1'),
 	(2, 'user2', 'user2@test.com', 'abcdefg', '2024-10-17 01:00:55.260444', 'User2'),
 	(3, 'user3', 'user3@test.com', 'abcdefg', '2024-10-17 01:00:55.260444', 'User3');
 
 SELECT pg_catalog.setval('public.user_id_seq', 3, true);
+
+-- SECTION: POST-DATA
+
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
 
 ALTER TABLE ONLY public."user"
     ADD CONSTRAINT user_email_key UNIQUE (email);
