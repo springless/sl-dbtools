@@ -143,11 +143,11 @@ fn keep_dump_line(line: &str) -> bool {
     || line.starts_with("SET xmloption")
     || line.starts_with("SET check_function_bodies")
     // strip out setvals that just set the sequence to the default `1` value
+)
     || (
         line.starts_with("SELECT pg_catalog.setval(")
         && line.ends_with(" 1, false);")
     )
-)
 )
 )
 }
